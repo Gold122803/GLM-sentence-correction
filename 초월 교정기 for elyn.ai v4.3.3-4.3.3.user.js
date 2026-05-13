@@ -1,10 +1,8 @@
 // ==UserScript==
 // @name         초월 교정기 for elyn.ai v4.3.3
 // @namespace    http://tampermonkey.net/
-// @version      4.3.6
-// @updateURL    https://raw.githubusercontent.com/Gold122803/GLM-sentence-correction/main/%EC%B4%88%EC%9B%94%20%EA%B5%90%EC%A0%95%EA%B8%B0%20for%20elyn.ai%20v4.3.3-4.3.3.user.js
-// @downloadURL  https://raw.githubusercontent.com/Gold122803/GLM-sentence-correction/main/%EC%B4%88%EC%9B%94%20%EA%B5%90%EC%A0%95%EA%B8%B0%20for%20elyn.ai%20v4.3.3-4.3.3.user.js
-// @description  v4.3.6 emergency update: GitHub Raw 설치 링크 및 일반판 프롬프트 복구
+// @version      4.3.7
+// @description  elyn.ai AI 메시지를 Gemini/DeepSeek/OpenRouter로 자동 교정·교체. v4.3.7: 일반판 details-aware 프롬프트와 Lite 프롬프트 분리 복구.
 // @match        https://elyn.ai/*
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -265,7 +263,7 @@
     panel.id = 'trans-setting-panel';
     panel.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-            <h4 style="margin:0;font-size:16px;color:#1A1918;font-family:sans-serif;">초월 교정 설정 v4.3.6</h4>
+            <h4 style="margin:0;font-size:16px;color:#1A1918;font-family:sans-serif;">초월 교정 설정 v4.3.7</h4>
             <button id="trans-panel-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:#61605A;line-height:1;padding:0 4px;">✕</button>
         </div>
         <span class="trans-label">API 공급자:</span>
@@ -918,5 +916,3 @@
     setInterval(syncTranslateBtn, 2000);
 
 })();
-
-
