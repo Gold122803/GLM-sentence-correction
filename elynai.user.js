@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         초월 교정기 for elyn.ai
 // @namespace    http://tampermonkey.net/
-// @version      5.1.1
+// @version      5.1.2
 // @updateURL    https://raw.githubusercontent.com/Gold122803/GLM-sentence-correction/main/release/elynai.user.js
 // @downloadURL  https://raw.githubusercontent.com/Gold122803/GLM-sentence-correction/main/release/elynai.user.js
-// @description  elyn.ai AI 메시지를 Gemini/DeepSeek/OpenRouter로 자동 교정·교체. v5.1.1: OpenRouter 공급자 슬러그 지정 기능 추가.
+// @description  elyn.ai AI 메시지를 Gemini/DeepSeek/OpenRouter로 자동 교정·교체. v5.1.2: DeepSeek thinking 비활성화 옵션 추가.
 // @match        https://elyn.ai/*
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -267,7 +267,7 @@
     panel.id = 'trans-setting-panel';
     panel.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-            <h4 style="margin:0;font-size:16px;color:#1A1918;font-family:sans-serif;">초월 교정 설정 v5.1.1</h4>
+            <h4 style="margin:0;font-size:16px;color:#1A1918;font-family:sans-serif;">초월 교정 설정 v5.1.2</h4>
             <button id="trans-panel-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:#61605A;line-height:1;padding:0 4px;">✕</button>
         </div>
         <span class="trans-label">API 공급자:</span>
@@ -284,7 +284,7 @@
             <span class="trans-label">DeepSeek API 주소:</span>
             <input type="text" id="trans-deepseek-endpoint" placeholder="https://api.deepseek.com/chat/completions">
             <span class="trans-label">DeepSeek 추론 강도:</span>
-            <select id="trans-deepseek-reasoning"><option value="high">High</option><option value="max">MAX</option></select>
+            <select id="trans-deepseek-reasoning"><option value="disabled">Disabled</option><option value="high">High</option><option value="max">MAX</option></select>
         </div>
         <div id="trans-openrouter-options" style="display:none;">
             <span class="trans-label">OpenRouter 추론 강도:</span>
@@ -404,7 +404,7 @@
             GM_setValue('deepSeekApiKey', apiKeyInput.value.trim());
             GM_setValue('deepSeekModel', model);
             GM_setValue('deepSeekEndpoint', deepSeekEndpointInput.value.trim() || DEFAULT_DEEPSEEK_ENDPOINT);
-            GM_setValue('deepSeekReasoningEffort', deepSeekReasoningSelect.value || 'high');
+            GM_setValue('deepSeekReasoningEffort', deepSeekReasoningSelect.value || 'disabled');
         } else if (provider === 'openrouter') {
             GM_setValue('openRouterApiKey', apiKeyInput.value.trim());
             GM_setValue('openRouterModel', model);
@@ -426,7 +426,7 @@
         deepSeekOptions.style.display = provider === 'deepseek' ? 'block' : 'none';
         openRouterOptions.style.display = provider === 'openrouter' ? 'block' : 'none';
         deepSeekEndpointInput.value = GM_getValue('deepSeekEndpoint', DEFAULT_DEEPSEEK_ENDPOINT);
-        deepSeekReasoningSelect.value = GM_getValue('deepSeekReasoningEffort', 'high');
+        deepSeekReasoningSelect.value = GM_getValue('deepSeekReasoningEffort', 'disabled');
         openRouterReasoningSelect.value = GM_getValue('openRouterReasoningEffort', 'none');
         openRouterProviderInput.value = GM_getValue('openRouterProvider', '');
     }
@@ -687,13 +687,14 @@
             if (!apiKey) { reject(new Error('DeepSeek API 키가 설정되지 않았습니다.')); return; }
             const modelId = overrideModel || GM_getValue('deepSeekModel', DEFAULT_DEEPSEEK_MODEL);
             const endpoint = GM_getValue('deepSeekEndpoint', DEFAULT_DEEPSEEK_ENDPOINT).trim() || DEFAULT_DEEPSEEK_ENDPOINT;
-            const reasoningEffort = GM_getValue('deepSeekReasoningEffort', 'high');
+            const reasoningEffort = GM_getValue('deepSeekReasoningEffort', 'disabled');
+            const thinkingEnabled = reasoningEffort !== 'disabled';
             const maxTokens = reasoningEffort === 'max' ? 32768 : 8192;
             const { contextBlock, protectedBlocks } = buildCorrectionInput(text, userContext);
             GM_xmlhttpRequest({
                 method: 'POST', timeout: 120000, url: endpoint,
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-                data: JSON.stringify({ model: modelId, messages: [{ role: 'system', content: buildFinalPrompt() }, { role: 'user', content: contextBlock }], thinking: { type: 'enabled' }, reasoning_effort: reasoningEffort, max_tokens: maxTokens, stream: false }),
+                data: JSON.stringify({ model: modelId, messages: [{ role: 'system', content: buildFinalPrompt() }, { role: 'user', content: contextBlock }], thinking: { type: thinkingEnabled ? 'enabled' : 'disabled' }, ...(thinkingEnabled ? { reasoning_effort: reasoningEffort } : {}), max_tokens: maxTokens, stream: false }),
                 onload(res) {
                     try {
                         const data = JSON.parse(res.responseText || '{}');
