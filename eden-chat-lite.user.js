@@ -1,11 +1,11 @@
 // ==UserScript==
-// @name         초월 교정기 for elyn.ai
+// @name         초월 교정기 Lite for eden-chat
 // @namespace    http://tampermonkey.net/
 // @version      5.0.1
-// @updateURL    https://raw.githubusercontent.com/Gold122803/GLM-sentence-correction/main/release/elynai.user.js
-// @downloadURL  https://raw.githubusercontent.com/Gold122803/GLM-sentence-correction/main/release/elynai.user.js
-// @description  elyn.ai AI 메시지를 Gemini/DeepSeek/OpenRouter로 자동 교정·교체. v5.0.1: 기본 Gemini 모델을 gemini-flash-lite-latest로 변경.
-// @match        https://elyn.ai/*
+// @updateURL    https://raw.githubusercontent.com/Gold122803/GLM-sentence-correction/main/release/eden-chat-lite.user.js
+// @downloadURL  https://raw.githubusercontent.com/Gold122803/GLM-sentence-correction/main/release/eden-chat-lite.user.js
+// @description  eden-chat AI 메시지를 Gemini/DeepSeek/OpenRouter로 자동 교정·교체. v5.0.1 Lite: 기본 Gemini 모델을 gemini-flash-lite-latest로 변경.
+// @match        https://www.eden-chat.com/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addStyle
@@ -39,25 +39,23 @@
     const GEMINI_RETRY_BASE_DELAY_MS = 1200;
 
     const baseSystemPrompt = `[역할 및 목적]
-당신은 한국어 문장 교정 전문가다. 입력된 텍스트에서 <details> 블록은 맥락 참고용 메타데이터로만 사용하고, 실제 교정 대상은 <details> 바깥의 본문과 NPC 대사다.
+당신은 한국어 문장 교정 전문가다. 입력된 텍스트의 원문 의미, 사건 흐름, 감정선, 캐릭터성, 말투, 장면 의도를 유지한 채 한국어 본문과 대사를 자연스럽고 읽기 좋게 다듬는다.
 
-목표는 원문의 사건, 정보, 감정선, 캐릭터성, 관계, 말투, 호칭, 장면 의도를 유지한 채 <details> 바깥의 한국어 본문만 자연스럽고 읽기 좋게 다듬는 것이다. 원문에 없는 사건, 감정, 설명, 행동, 관계 진전, 대사, 설정은 추가하지 않는다.
+원문에 없는 사건, 감정, 설명, 행동, 관계 진전, 대사, 설정을 추가하지 않는다. 교정자는 내용을 새로 쓰는 작가가 아니라, 이미 있는 문장을 더 정확하고 자연스럽게 정돈하는 사람이다.
 
 [작업 우선순위]
-1. <details> 블록과 그 내부 내용의 완전 보존
-2. 원문의 사건, 정보, 감정선, 캐릭터성, 관계, 대화 의도 보존
-3. <details>의 Logic / Relation Database를 참고하여 호칭, 말투, 관계 거리감, NSFW Gate 상태를 일관되게 유지
-4. 맞춤법, 띄어쓰기, 문법 오류 교정
-5. 번역투와 부자연스러운 표현 제거
-6. 해설투, 메타적 설명, 직접적 심리 설명을 줄이고 행동·반응·침묵·시선 중심으로 다듬기
-7. 문장을 더 읽기 좋게 만들되, 원문의 의미와 장면 진행을 바꾸지 않기
+1. 원문의 사건, 정보, 감정선, 캐릭터성, 관계, 대화 의도 보존
+2. 맞춤법, 띄어쓰기, 문법 오류 교정
+3. 번역투와 부자연스러운 표현 제거
+4. 문장의 흐름, 호흡, 말끝을 자연스럽게 정돈
+5. 해설투, 메타적 설명, 직접적 심리 설명을 줄이고 행동·반응·침묵·시선 중심으로 다듬기
+6. 문장을 더 읽기 좋게 만들되, 원문의 의미와 장면 진행을 바꾸지 않기
 
 [교정 대상 범위]
-- <details> 바깥의 visible body, 서술, NPC 대사만 교정한다.
-- <details> 블록은 열고 닫는 태그, summary, 내부 줄바꿈, 영어 메타데이터, 수치, 이름, 용어, 기호를 포함해 한 글자도 수정하지 않는다.
-- <details> 내부의 영어는 한국어로 번역하지 않는다.
-- Relation Database의 수치, 상태값, 감정값, 이름, 호칭 후보, nsfw-gate 기록은 수정하지 않는다.
+- 입력된 본문과 대사를 교정한다.
 - 코드블럭 안의 내용은 수정하지 않는다.
+- HTML 태그, Markdown 기호, 이름표, 줄바꿈, 문단 구분, 특수기호는 가능한 한 유지한다.
+- 수치, 이름, 고유명사, 설정값은 명백한 오탈자가 아니면 임의로 바꾸지 않는다.
 
 [핵심 교정 원칙]
 - 띄어쓰기, 맞춤법, 문법 오류를 바로잡는다.
@@ -76,7 +74,7 @@
 - 내면을 반드시 직접 써야 할 때는 한 문장 안에서 짧고 거칠게 처리하고, 원인을 길게 설명하지 않는다.
 
 [문체 기준]
-- <details> 바깥 본문의 묘사와 서술의 종결어미는 원문의 문체를 유지한다.
+- 본문의 묘사와 서술의 종결어미는 원문의 문체를 유지한다.
 - 감정·의도·관계·원인을 직접 설명하는 문장은 원문의 의미를 유지하는 범위에서 행동, 반응, 침묵, 시선, 거리감, 말의 리듬으로 자연스럽게 정돈한다.
 - 다만 원문에 없는 행동이나 대사를 새로 만들지 않는다.
 - "마치 ~인 듯했다", "~처럼 보였다", "~라는 사실을 깨달았다", "~한 감정이 들었다" 같은 해설투와 메타적 표현은 필요할 때만 최소한으로 사용한다.
@@ -88,7 +86,7 @@
 - 큰따옴표("...") 안의 텍스트는 인물의 대사로 취급한다.
 - 큰따옴표 안의 대사를 서술문으로 바꾸거나, 서술문을 임의로 대사화하지 않는다.
 - 인물의 대사는 원래 말투와 감정선을 유지하면서 자연스러운 구어체로 다듬는다.
-- <details>의 Voice, Address, Relationship 정보와 대화 흐름을 참고하며, 단순히 기록된 호칭을 기계적으로 반복하지 말고 인물 관계, 나이·성명 구분, 친밀도, 애칭, 거리감, 장면의 감정선에 맞춰 NPC 대사 속 호칭을 자연스럽게 수정한다.
+- 인물 관계, 나이·성명 구분, 친밀도, 애칭, 거리감, 장면의 감정선에 맞춰 대사 속 호칭을 자연스럽게 판단해 수정한다.
 - 성과 이름이 뒤섞였거나, 애칭·직함·존칭·이름 부름이 관계에 비해 어색한 경우에는 원문의 관계를 바꾸지 않는 범위에서 한국어 대화에 맞는 호칭으로 정돈한다.
 - 존댓말/반말, 높임 표현, 부름말, 말끝은 상대와의 관계 및 현재 장면의 긴장도에 맞게 자연스럽게 유지하거나 보정한다.
 - 대화 맥락상 부자연스러운 어투와 표현만 수정한다.
@@ -96,18 +94,7 @@
 - 캐릭터의 성격, 관계, 거리감이 바뀌지 않도록 주의한다.
 - 캐릭터의 거친 말투, 욕설 강도, 호칭, 대화 리듬은 과도하게 순화하지 않는다.
 
-[NSFW Gate 반영]
-- <details>의 [NSFW Gate]를 반드시 참고한다.
-- state가 closed인 경우, <details> 바깥 본문에서 성적 신체 초점, 선정적 분위기, 에로틱한 프레이밍, 암시적 고조, 강제적 친밀감, 우발적 친밀감, 노출 프레이밍, 흥분 단서, 집요한 신체 묘사를 강화하지 않는다.
-- state가 closed인데 본문에 그런 표현이 있으면, 원문 사건을 바꾸지 않는 범위에서 중립적이고 실용적인 묘사, 감정의 절제된 외부 신호, 장면 분위기로 낮춘다.
-- 신체, 옷차림, 상처 치료, 가까운 거리, 당황, 취약함이 필요한 장면이라도 성적 뉘앙스로 쓰지 말고 장면 이해에 필요한 만큼만 중립적으로 남긴다.
-- state가 limited 또는 open인 경우에도 <details>에 기록된 allowed / blocked 범위를 넘지 않는다.
-- start가 closed every turn이거나 reopened-this-turn이 no인 경우, 이전 턴의 open 상태나 여운을 현재 턴의 허가로 간주하지 않는다.
-- continuation이 ambiguous 또는 none이거나 if-uncertain이 closed인 경우, 성적·선정적 뉘앙스를 중립화한다.
-- 과거 허가, 호감도, 로맨스, 플러팅, 신체적 근접, 노출 의상, 목욕, 상처 치료, 사적인 장소, 직전 턴의 분위기는 그 자체로 현재 턴의 허가가 아니다.
-
 [보존 규칙]
-- <details> 태그와 그 내부 내용은 한 글자도 수정하지 말고 원본 그대로 출력한다.
 - 코드블럭 안의 내용은 수정하지 않는다.
 - 원문의 줄바꿈, 문단 구분, Markdown 기호, HTML 태그, 별표, 따옴표, 괄호, 이름표, 특수기호를 가능한 한 유지한다.
 - 교정 외의 부연 설명, 인사말, 감상, 주석을 출력하지 않는다.
@@ -514,7 +501,7 @@
     function showToast(msg, duration = 3000) { toast.textContent = msg; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), duration); }
     function setStatus(msg, type = 'info') { statusBox.textContent = msg; statusBox.className = `active ${type}`; }
     function clearStatus() { statusBox.className = ''; statusBox.textContent = ''; }
-    function isChattingPage() { return location.pathname.startsWith('/chat/'); }
+    function isChattingPage() { return location.hostname === 'www.eden-chat.com'; }
     function buildFinalPrompt() { return customPromptInput?.value || GM_getValue('customPrompt', baseSystemPrompt); }
     function maskCodeBlocks(text) { return text.replace(CODE_BLOCK_RE, (_, inner) => FENCE_OPEN_SUB + inner + FENCE_CLOSE_SUB); }
     function unmaskCodeBlocks(text) { return text.split(FENCE_OPEN_SUB).join('```').split(FENCE_CLOSE_SUB).join('```'); }
@@ -671,7 +658,7 @@
             const contextBlock = buildCorrectionInput(text, userContext);
             GM_xmlhttpRequest({
                 method: 'POST', timeout: 120000, url: DEFAULT_OPENROUTER_ENDPOINT,
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, 'HTTP-Referer': 'https://elyn.ai/', 'X-Title': 'Elyn AI Transcendent Corrector' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, 'HTTP-Referer': 'https://www.eden-chat.com/', 'X-Title': 'Eden Chat Transcendent Corrector' },
                 data: JSON.stringify({ model: modelId, messages: [{ role: 'system', content: buildFinalPrompt() }, { role: 'user', content: contextBlock }], temperature: 0.7, reasoning: { effort: reasoningEffort, exclude: true }, stream: false }),
                 onload(res) {
                     try {
@@ -697,47 +684,51 @@
     }
 
     // =============================================
-    //  elyn.ai UI 자동화
+    //  eden-chat UI 자동화
     // =============================================
     function findLastUserMessage() {
-        const userMsgs = document.querySelectorAll('[data-message-id^="user-"]');
-        if (!userMsgs.length) return '';
-        const last = userMsgs[userMsgs.length - 1];
-        return Array.from(last.querySelectorAll('p.whitespace-pre-wrap')).map(p => p.textContent.trim()).filter(Boolean).join('\n');
+        const msgs = document.querySelectorAll('div.hidden.lg\\:block.whitespace-pre-line.text-white');
+        if (!msgs.length) return '';
+        return Array.from(msgs[msgs.length - 1].querySelectorAll('span'))
+            .map(s => s.textContent.trim())
+            .filter(Boolean)
+            .join('\n');
     }
     function isVisible(el) {
         if (!el || !el.isConnected) return false;
         const rect = el.getBoundingClientRect(); const style = window.getComputedStyle(el);
         return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
     }
-    function findMessageRoot(el) { return el?.closest?.('[data-message-id]') || null; }
+    function findMessageRoot(el) { return el?.closest?.('[data-message-id], article, main, section') || null; }
     function findLastPencilBtn() {
-        const allBtns = document.querySelectorAll('button[data-chat-interactive="true"]');
-        const pencilBtns = Array.from(allBtns).filter(btn => {
-            const messageRoot = findMessageRoot(btn);
-            return isVisible(btn) && !btn.disabled && btn.querySelector('.lucide-pencil') && !messageRoot?.getAttribute('data-message-id')?.startsWith('user-');
-        });
+        const pencilBtns = Array.from(document.querySelectorAll('button[aria-label="수정"]'))
+            .filter(btn => isVisible(btn) && !btn.disabled && !isOwnUiElement(btn));
         return pencilBtns[pencilBtns.length - 1] || null;
     }
-    function findEditArea() {
-        const candidates = Array.from(document.querySelectorAll('[contenteditable="true"]')).filter(el => isVisible(el));
-        return candidates.find(el => el.classList.contains('whitespace-pre-wrap')) || candidates[candidates.length - 1] || null;
-    }
-    async function waitForElement(getter, timeout = 2500, interval = 100) {
+    function findEditArea(options = {}) {
+        const requireText = options?.requireText === true;
+        const candidates = Array.from(document.querySelectorAll('textarea'))
+            .filter(el => isVisible(el) && !isOwnUiElement(el));
+        const withText = candidates.filter(el => normalizeEditableText(el.value));
+        if (requireText) return withText[withText.length - 1] || null;
+
+        const exact = candidates.find(el => el.getAttribute('placeholder') === '메시지 내용을 입력하세요...');
+        return withText[withText.length - 1] || exact || candidates[candidates.length - 1] || null;
+    }    async function waitForElement(getter, timeout = 2500, interval = 100) {
         const started = Date.now(); let found = getter();
         while (!found && Date.now() - started < timeout) { await sleep(interval); found = getter(); }
         return found;
     }
-    function isOwnUiElement(el) { return !!el?.closest?.('#trans-setting-panel, #trans-result-modal, #trans-result-overlay, #trans-toast'); }
+    async function waitForEditAreaWithText(timeout = 3500, interval = 100) {
+        return waitForElement(() => findEditArea({ requireText: true }), timeout, interval);
+    }    function isOwnUiElement(el) { return !!el?.closest?.('#trans-setting-panel, #trans-result-modal, #trans-result-overlay, #trans-toast'); }
     function getButtonLabel(btn) { return [btn.textContent, btn.getAttribute('aria-label'), btn.getAttribute('title')].filter(Boolean).join(' '); }
     function isSaveLikeButton(btn) {
-        const className = typeof btn.className === 'string' ? btn.className : String(btn.className || '');
         const label = getButtonLabel(btn);
-        const hasCheckIcon = !!btn.querySelector('.lucide-check, .lucide-circle-check, svg[class*="check"], svg[class*="Check"]');
-        const looksGreen = className.includes('hover:bg-green-500') || className.includes('bg-green-500') || className.includes('text-green');
+        const hasSaveIcon = !!btn.querySelector('.lucide-save, svg[class*="save"], svg[class*="Save"]');
         const hasSaveLabel = /저장|수정\s*확정|확정|완료|적용|save|done|confirm|apply/i.test(label);
         const hasCancelLabel = /취소|닫기|cancel|close/i.test(label);
-        return !hasCancelLabel && (hasCheckIcon || looksGreen || hasSaveLabel);
+        return !hasCancelLabel && (hasSaveIcon || hasSaveLabel);
     }
     function findSaveBtn(scopeEl = null, tried = new Set()) {
         const scopes = []; const messageRoot = findMessageRoot(scopeEl);
@@ -748,7 +739,7 @@
         }
         return null;
     }
-    function isEditStillOpen(editArea) { return !!editArea?.isConnected && editArea.getAttribute('contenteditable') === 'true' && isVisible(editArea); }
+    function isEditStillOpen(editArea) { return !!editArea?.isConnected && isVisible(editArea); }
     async function waitForEditClosed(editArea, timeout = 1500, interval = 100) {
         const started = Date.now();
         while (Date.now() - started < timeout) { if (!isEditStillOpen(editArea)) return true; await sleep(interval); }
@@ -763,9 +754,10 @@
             if (await waitForEditClosed(editArea)) return;
             await sleep(250);
         }
-        throw new Error('교정본은 입력됐지만 수정 확정 버튼을 누르지 못했습니다. elyn.ai 버튼 구조가 바뀐 것 같습니다.');
+        throw new Error('교정본은 입력됐지만 수정 확정 버튼을 누르지 못했습니다. eden-chat 버튼 구조가 바뀐 것 같습니다.');
     }
     function normalizeEditableText(text) { return (text || '').replace(/\r\n/g, '\n').trim(); }
+    function getEditableText(el) { return el?.tagName === 'TEXTAREA' ? el.value : el?.innerText || ''; }
     function fireEditableEvents(el, text, inputType = 'insertText') {
         el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType, data: text }));
         el.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType, data: text }));
@@ -774,6 +766,13 @@
     }
     function setEditableContent(el, text) {
         el.focus();
+        if (el.tagName === 'TEXTAREA') {
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+            if (nativeInputValueSetter) nativeInputValueSetter.call(el, text);
+            else el.value = text;
+            fireEditableEvents(el, text, 'insertText');
+            return normalizeEditableText(el.value) === normalizeEditableText(text);
+        }
         const selection = window.getSelection(); const range = document.createRange();
         range.selectNodeContents(el); selection.removeAllRanges(); selection.addRange(range);
         document.execCommand('selectAll', false, null);
@@ -783,20 +782,19 @@
         return normalizeEditableText(el.innerText) === normalizeEditableText(text);
     }
     async function applyTranslation(translated) {
-        let editArea = findEditArea();
+        let editArea = findEditArea({ requireText: true });
         if (!editArea) {
             const pencilBtn = findLastPencilBtn();
             if (!pencilBtn) throw new Error('수정 버튼을 찾을 수 없습니다. 채팅 페이지를 확인해주세요.');
-            pencilBtn.click(); editArea = await waitForElement(findEditArea);
+            pencilBtn.click(); editArea = await waitForEditAreaWithText();
         }
         if (!editArea) throw new Error('편집창을 열 수 없습니다.');
         let inserted = setEditableContent(editArea, translated);
         await sleep(250);
-        if (!inserted || normalizeEditableText(editArea.innerText) !== normalizeEditableText(translated)) { inserted = setEditableContent(editArea, translated); await sleep(250); }
-        if (!inserted || normalizeEditableText(editArea.innerText) !== normalizeEditableText(translated)) throw new Error('교정본을 편집창에 넣지 못했습니다. elyn.ai 편집창 구조가 바뀐 것 같습니다.');
+        if (!inserted || normalizeEditableText(getEditableText(editArea)) !== normalizeEditableText(translated)) { inserted = setEditableContent(editArea, translated); await sleep(250); }
+        if (!inserted || normalizeEditableText(getEditableText(editArea)) !== normalizeEditableText(translated)) throw new Error('교정본을 편집창에 넣지 못했습니다. eden-chat 편집창 구조가 바뀐 것 같습니다.');
         await confirmEditedMessage(editArea); await sleep(600);
     }
-
     // =============================================
     //  모달 상태 관리
     // =============================================
@@ -853,9 +851,9 @@
             if (!pencilBtn) throw new Error('AI 메시지의 수정 버튼을 찾을 수 없습니다. 마우스를 AI 메시지 위에 올려 두세요.');
             const userContext = findLastUserMessage();
             pencilBtn.click();
-            const editArea = await waitForElement(findEditArea);
-            if (!editArea) throw new Error('편집창이 열리지 않았습니다. 잠시 후 다시 시도해주세요.');
-            const original = editArea.innerText.trim();
+            const editArea = await waitForEditAreaWithText();
+            if (!editArea) throw new Error('편집창 본문을 찾지 못했습니다. eden-chat 수정창이 열렸는지 확인해주세요.');
+            const original = getEditableText(editArea).trim();
             if (!original) throw new Error('교정할 내용이 없습니다.');
             activeOriginalText = original; activeUserContext = userContext;
 
@@ -877,7 +875,7 @@
             }
         } catch (err) {
             setStatus(`❌ ${err.message}`, 'err');
-            console.error('[초월 교정기 elyn v4.1]', err);
+            console.error('[초월 교정기 eden-chat v4.1]', err);
         } finally {
             translateBtn.disabled = false; quickBtn.disabled = false;
         }

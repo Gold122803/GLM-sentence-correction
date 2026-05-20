@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         초월 교정기 for eden-chat
 // @namespace    http://tampermonkey.net/
-// @version      5.0.0
+// @version      5.0.1
 // @updateURL    https://raw.githubusercontent.com/Gold122803/GLM-sentence-correction/main/release/eden-chat.user.js
 // @downloadURL  https://raw.githubusercontent.com/Gold122803/GLM-sentence-correction/main/release/eden-chat.user.js
-// @description  eden-chat AI 메시지를 Gemini/DeepSeek/OpenRouter로 자동 교정·교체. v5.0.0: 고정 배포 파일명, 자동 업데이트 URL, 일반판 details-aware 프롬프트.
+// @description  eden-chat AI 메시지를 Gemini/DeepSeek/OpenRouter로 자동 교정·교체. v5.0.1: 기본 Gemini 모델을 gemini-flash-lite-latest로 변경.
 // @match        https://www.eden-chat.com/*
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -27,7 +27,7 @@
 
     // v4.1: 사용자가 기존에 저장한 모델명을 존중합니다.
     // 새 설치/초기화 시에는 기존 v4.0 기본값을 유지합니다.
-    const DEFAULT_GEMINI_MODEL = 'gemini-flash-latest';
+    const DEFAULT_GEMINI_MODEL = 'gemini-flash-lite-latest';
     const DEFAULT_DEEPSEEK_MODEL = 'deepseek-v4-flash';
     const DEFAULT_DEEPSEEK_ENDPOINT = 'https://api.deepseek.com/chat/completions';
     const DEFAULT_OPENROUTER_MODEL = 'openai/gpt-4o-mini';
@@ -265,7 +265,7 @@
     panel.id = 'trans-setting-panel';
     panel.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-            <h4 style="margin:0;font-size:16px;color:#1A1918;font-family:sans-serif;">초월 교정 설정 v5.0.0</h4>
+            <h4 style="margin:0;font-size:16px;color:#1A1918;font-family:sans-serif;">초월 교정 설정 v5.0.1</h4>
             <button id="trans-panel-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:#61605A;line-height:1;padding:0 4px;">✕</button>
         </div>
         <span class="trans-label">API 공급자:</span>
@@ -377,10 +377,15 @@
         if (provider === 'openrouter') return DEFAULT_OPENROUTER_MODEL;
         return DEFAULT_GEMINI_MODEL;
     }
+    function normalizeGeminiModel(model) {
+        const value = String(model || '').trim();
+        if (!value || value === 'gemini-flash-latest') return DEFAULT_GEMINI_MODEL;
+        return value;
+    }
     function getSavedModel(provider) {
         if (provider === 'deepseek') return GM_getValue('deepSeekModel', DEFAULT_DEEPSEEK_MODEL);
         if (provider === 'openrouter') return GM_getValue('openRouterModel', DEFAULT_OPENROUTER_MODEL);
-        return GM_getValue('apiModel', DEFAULT_GEMINI_MODEL);
+        return normalizeGeminiModel(GM_getValue('apiModel', DEFAULT_GEMINI_MODEL));
     }
     function getSavedApiKey(provider) {
         if (provider === 'deepseek') return GM_getValue('deepSeekApiKey', '');
@@ -388,7 +393,8 @@
         return GM_getValue('apiKey', '');
     }
     function saveProviderFields(provider) {
-        const model = modelSelect.value.trim() || getDefaultModel(provider);
+        const rawModel = modelSelect.value.trim() || getDefaultModel(provider);
+        const model = provider === 'gemini' ? normalizeGeminiModel(rawModel) : rawModel;
         if (provider === 'deepseek') {
             GM_setValue('deepSeekApiKey', apiKeyInput.value.trim());
             GM_setValue('deepSeekModel', model);
@@ -539,7 +545,7 @@
             const apiKey = GM_getValue('apiKey', '').trim();
             if (!apiKey) { reject(new Error('Gemini API 키가 설정되지 않았습니다.')); return; }
 
-            const modelId = (overrideModel || GM_getValue('apiModel', DEFAULT_GEMINI_MODEL)).trim();
+            const modelId = (overrideModel || normalizeGeminiModel(GM_getValue('apiModel', DEFAULT_GEMINI_MODEL))).trim();
             const contextBlock = buildCorrectionInput(text, userContext);
 
             GM_xmlhttpRequest({
