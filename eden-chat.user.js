@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         초월 교정기 for eden-chat
 // @namespace    http://tampermonkey.net/
-// @version      5.0.1
+// @version      5.1.1
 // @updateURL    https://raw.githubusercontent.com/Gold122803/GLM-sentence-correction/main/release/eden-chat.user.js
 // @downloadURL  https://raw.githubusercontent.com/Gold122803/GLM-sentence-correction/main/release/eden-chat.user.js
-// @description  eden-chat AI 메시지를 Gemini/DeepSeek/OpenRouter로 자동 교정·교체. v5.0.1: 기본 Gemini 모델을 gemini-flash-lite-latest로 변경.
+// @description  eden-chat AI 메시지를 Gemini/DeepSeek/OpenRouter로 자동 교정·교체. v5.1.1: OpenRouter 공급자 슬러그 지정 기능 추가.
 // @match        https://www.eden-chat.com/*
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -22,6 +22,8 @@
     //  상수
     // =============================================
     const CODE_BLOCK_RE = /```([\s\S]*?)```/g;
+    const DETAILS_BLOCK_RE = /<details\b[\s\S]*?<\/details>/gi;
+    const PROTECTED_BLOCK_TOKEN_RE = /@@TC_PROTECTED_BLOCK_(\d+)@@/g;
     const FENCE_OPEN_SUB = '===BLOCK_OPEN===';
     const FENCE_CLOSE_SUB = '===BLOCK_CLOSE===';
 
@@ -265,7 +267,7 @@
     panel.id = 'trans-setting-panel';
     panel.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-            <h4 style="margin:0;font-size:16px;color:#1A1918;font-family:sans-serif;">초월 교정 설정 v5.0.1</h4>
+            <h4 style="margin:0;font-size:16px;color:#1A1918;font-family:sans-serif;">초월 교정 설정 v5.1.1</h4>
             <button id="trans-panel-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:#61605A;line-height:1;padding:0 4px;">✕</button>
         </div>
         <span class="trans-label">API 공급자:</span>
@@ -287,6 +289,8 @@
         <div id="trans-openrouter-options" style="display:none;">
             <span class="trans-label">OpenRouter 추론 강도:</span>
             <select id="trans-openrouter-reasoning"><option value="none">None</option><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">XHigh</option></select>
+            <span class="trans-label">OpenRouter 공급자 슬러그 (선택):</span>
+            <input type="text" id="trans-openrouter-provider" placeholder="예: siliconflow 또는 siliconflow, deepinfra">
         </div>
         <div class="trans-toggle-label">
             <span class="trans-switch-title">자동 교체</span>
@@ -350,6 +354,7 @@
     const deepSeekReasoningSelect = document.getElementById('trans-deepseek-reasoning');
     const openRouterOptions = document.getElementById('trans-openrouter-options');
     const openRouterReasoningSelect = document.getElementById('trans-openrouter-reasoning');
+    const openRouterProviderInput = document.getElementById('trans-openrouter-provider');
     const autoReplaceToggle = document.getElementById('trans-auto-replace-toggle');
     const customPromptInput = document.getElementById('trans-custom-prompt');
     const saveBtn = document.getElementById('trans-save-btn');
@@ -404,6 +409,7 @@
             GM_setValue('openRouterApiKey', apiKeyInput.value.trim());
             GM_setValue('openRouterModel', model);
             GM_setValue('openRouterReasoningEffort', openRouterReasoningSelect.value || 'none');
+            GM_setValue('openRouterProvider', openRouterProviderInput.value.trim());
         } else {
             GM_setValue('apiKey', apiKeyInput.value.trim());
             GM_setValue('apiModel', model);
@@ -422,6 +428,14 @@
         deepSeekEndpointInput.value = GM_getValue('deepSeekEndpoint', DEFAULT_DEEPSEEK_ENDPOINT);
         deepSeekReasoningSelect.value = GM_getValue('deepSeekReasoningEffort', 'high');
         openRouterReasoningSelect.value = GM_getValue('openRouterReasoningEffort', 'none');
+        openRouterProviderInput.value = GM_getValue('openRouterProvider', '');
+    }
+    function getOpenRouterProviderRouting() {
+        const only = GM_getValue('openRouterProvider', '')
+            .split(',')
+            .map(value => value.trim())
+            .filter(Boolean);
+        return only.length ? { only } : null;
     }
     function loadCustomPrompt() {
         customPromptInput.value = GM_getValue('customPrompt', baseSystemPrompt);
@@ -516,12 +530,47 @@
     function clearStatus() { statusBox.className = ''; statusBox.textContent = ''; }
     function isChattingPage() { return location.hostname === 'www.eden-chat.com'; }
     function buildFinalPrompt() { return customPromptInput?.value || GM_getValue('customPrompt', baseSystemPrompt); }
-    function maskCodeBlocks(text) { return text.replace(CODE_BLOCK_RE, (_, inner) => FENCE_OPEN_SUB + inner + FENCE_CLOSE_SUB); }
-    function unmaskCodeBlocks(text) { return text.split(FENCE_OPEN_SUB).join('```').split(FENCE_CLOSE_SUB).join('```'); }
     function stripOuterFence(text) { return text.replace(/^```[^\n]*\n([\s\S]*?)\n```\s*$/m, '$1').trim(); }
+    function createProtectedCorrectionInput(text) {
+        const blocks = [];
+        const detailContexts = [];
+        const protect = (block, kind) => {
+            const token = `@@TC_PROTECTED_BLOCK_${blocks.length}@@`;
+            blocks.push({ token, block, kind });
+            if (kind === 'details') detailContexts.push(block);
+            return token;
+        };
+        const protectedText = String(text || '')
+            .replace(CODE_BLOCK_RE, match => protect(match, 'code'))
+            .replace(DETAILS_BLOCK_RE, match => protect(match, 'details'));
+        return { protectedText, blocks, detailContexts };
+    }
+    function restoreProtectedBlocks(text, blocks) {
+        let restored = String(text || '');
+        const missing = [];
+        for (const item of blocks) {
+            if (!restored.includes(item.token)) missing.push(item.token);
+            restored = restored.split(item.token).join(item.block);
+        }
+        const leftovers = restored.match(PROTECTED_BLOCK_TOKEN_RE);
+        if (missing.length || leftovers?.length) {
+            throw new Error(`보존 블록 토큰 오류: missing=${missing.join(', ') || 'none'}, leftover=${leftovers?.join(', ') || 'none'}`);
+        }
+        return restored;
+    }
     function buildCorrectionInput(text, userContext = '') {
-        const masked = maskCodeBlocks(text);
-        return userContext ? `[직전 유저 입력 - 맥락 참고용, 교정 대상 아님]\n${userContext}\n\n[교정 대상 AI 답변]\n${masked}` : masked;
+        const protection = createProtectedCorrectionInput(text);
+        const tokens = protection.blocks.map(item => item.token);
+        const tokenGuide = tokens.length
+            ? `[보존 블록 토큰]\n다음 토큰은 코드블럭 또는 <details> 원문을 대신한다. 교정 대상 안의 토큰 철자, 개수, 위치를 절대 바꾸지 말고 그대로 출력한다.\n${tokens.join('\n')}\n\n`
+            : '';
+        const detailsContext = protection.detailContexts.length
+            ? `[<details> 맥락 원문 - 참고용, 교정/출력 대상 아님]\n${protection.detailContexts.join('\n\n')}\n\n`
+            : '';
+        const body = userContext
+            ? `[직전 유저 입력 - 맥락 참고용, 교정 대상 아님]\n${userContext}\n\n[교정 대상 AI 답변]\n${protection.protectedText}`
+            : `[교정 대상 AI 답변]\n${protection.protectedText}`;
+        return { contextBlock: tokenGuide + detailsContext + body, protectedBlocks: protection.blocks };
     }
     function safeStringify(value, limit = 1600) {
         try { return JSON.stringify(value, null, 2).slice(0, limit); }
@@ -546,7 +595,7 @@
             if (!apiKey) { reject(new Error('Gemini API 키가 설정되지 않았습니다.')); return; }
 
             const modelId = (overrideModel || normalizeGeminiModel(GM_getValue('apiModel', DEFAULT_GEMINI_MODEL))).trim();
-            const contextBlock = buildCorrectionInput(text, userContext);
+            const { contextBlock, protectedBlocks } = buildCorrectionInput(text, userContext);
 
             GM_xmlhttpRequest({
                 method: 'POST',
@@ -606,7 +655,7 @@
                         }
 
                         const cleaned = stripOuterFence(raw);
-                        const restored = unmaskCodeBlocks(cleaned);
+                        const restored = restoreProtectedBlocks(cleaned, protectedBlocks);
                         resolve(restored);
                     } catch (e) { reject(e); }
                 },
@@ -640,7 +689,7 @@
             const endpoint = GM_getValue('deepSeekEndpoint', DEFAULT_DEEPSEEK_ENDPOINT).trim() || DEFAULT_DEEPSEEK_ENDPOINT;
             const reasoningEffort = GM_getValue('deepSeekReasoningEffort', 'high');
             const maxTokens = reasoningEffort === 'max' ? 32768 : 8192;
-            const contextBlock = buildCorrectionInput(text, userContext);
+            const { contextBlock, protectedBlocks } = buildCorrectionInput(text, userContext);
             GM_xmlhttpRequest({
                 method: 'POST', timeout: 120000, url: endpoint,
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
@@ -653,7 +702,7 @@
                         const choice = data.choices?.[0];
                         const raw = choice?.message?.content ?? '';
                         if (!raw) { reject(new Error(`DeepSeek 응답 본문이 비어 있습니다. finish_reason=${choice?.finish_reason || 'unknown'}.`)); return; }
-                        resolve(unmaskCodeBlocks(stripOuterFence(raw)));
+                        resolve(restoreProtectedBlocks(stripOuterFence(raw), protectedBlocks));
                     } catch (e) { reject(e); }
                 },
                 ontimeout() { reject(new Error('DeepSeek 요청 시간이 초과되었습니다.')); },
@@ -668,11 +717,12 @@
             if (!apiKey) { reject(new Error('OpenRouter API 키가 설정되지 않았습니다.')); return; }
             const modelId = overrideModel || GM_getValue('openRouterModel', DEFAULT_OPENROUTER_MODEL);
             const reasoningEffort = GM_getValue('openRouterReasoningEffort', 'none');
-            const contextBlock = buildCorrectionInput(text, userContext);
+            const providerRouting = getOpenRouterProviderRouting();
+            const { contextBlock, protectedBlocks } = buildCorrectionInput(text, userContext);
             GM_xmlhttpRequest({
                 method: 'POST', timeout: 120000, url: DEFAULT_OPENROUTER_ENDPOINT,
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, 'HTTP-Referer': 'https://www.eden-chat.com/', 'X-Title': 'Eden Chat Transcendent Corrector' },
-                data: JSON.stringify({ model: modelId, messages: [{ role: 'system', content: buildFinalPrompt() }, { role: 'user', content: contextBlock }], temperature: 0.7, reasoning: { effort: reasoningEffort, exclude: true }, stream: false }),
+                data: JSON.stringify({ model: modelId, messages: [{ role: 'system', content: buildFinalPrompt() }, { role: 'user', content: contextBlock }], temperature: 0.7, reasoning: { effort: reasoningEffort, exclude: true }, ...(providerRouting ? { provider: providerRouting } : {}), stream: false }),
                 onload(res) {
                     try {
                         const data = JSON.parse(res.responseText || '{}');
@@ -681,7 +731,7 @@
                         const choice = data.choices?.[0];
                         const raw = choice?.message?.content ?? '';
                         if (!raw) { reject(new Error(`OpenRouter 응답 본문이 비어 있습니다. finish_reason=${choice?.finish_reason || 'unknown'}.`)); return; }
-                        resolve(unmaskCodeBlocks(stripOuterFence(raw)));
+                        resolve(restoreProtectedBlocks(stripOuterFence(raw), protectedBlocks));
                     } catch (e) { reject(e); }
                 },
                 ontimeout() { reject(new Error('OpenRouter 요청 시간이 초과되었습니다.')); },

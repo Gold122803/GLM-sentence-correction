@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         초월 교정기 Lite for eden-chat
 // @namespace    http://tampermonkey.net/
-// @version      5.0.1
+// @version      5.1.1
 // @updateURL    https://raw.githubusercontent.com/Gold122803/GLM-sentence-correction/main/release/eden-chat-lite.user.js
 // @downloadURL  https://raw.githubusercontent.com/Gold122803/GLM-sentence-correction/main/release/eden-chat-lite.user.js
-// @description  eden-chat AI 메시지를 Gemini/DeepSeek/OpenRouter로 자동 교정·교체. v5.0.1 Lite: 기본 Gemini 모델을 gemini-flash-lite-latest로 변경.
+// @description  eden-chat AI 메시지를 Gemini/DeepSeek/OpenRouter로 자동 교정·교체. v5.1.1 Lite: OpenRouter 공급자 슬러그 지정 기능 추가.
 // @match        https://www.eden-chat.com/*
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -252,7 +252,7 @@
     panel.id = 'trans-setting-panel';
     panel.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-            <h4 style="margin:0;font-size:16px;color:#1A1918;font-family:sans-serif;">초월 교정 설정 v5.0.1</h4>
+            <h4 style="margin:0;font-size:16px;color:#1A1918;font-family:sans-serif;">초월 교정 설정 v5.1.1</h4>
             <button id="trans-panel-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:#61605A;line-height:1;padding:0 4px;">✕</button>
         </div>
         <span class="trans-label">API 공급자:</span>
@@ -274,6 +274,8 @@
         <div id="trans-openrouter-options" style="display:none;">
             <span class="trans-label">OpenRouter 추론 강도:</span>
             <select id="trans-openrouter-reasoning"><option value="none">None</option><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">XHigh</option></select>
+            <span class="trans-label">OpenRouter 공급자 슬러그 (선택):</span>
+            <input type="text" id="trans-openrouter-provider" placeholder="예: siliconflow 또는 siliconflow, deepinfra">
         </div>
         <div class="trans-toggle-label">
             <span class="trans-switch-title">자동 교체</span>
@@ -337,6 +339,7 @@
     const deepSeekReasoningSelect = document.getElementById('trans-deepseek-reasoning');
     const openRouterOptions = document.getElementById('trans-openrouter-options');
     const openRouterReasoningSelect = document.getElementById('trans-openrouter-reasoning');
+    const openRouterProviderInput = document.getElementById('trans-openrouter-provider');
     const autoReplaceToggle = document.getElementById('trans-auto-replace-toggle');
     const customPromptInput = document.getElementById('trans-custom-prompt');
     const saveBtn = document.getElementById('trans-save-btn');
@@ -391,6 +394,7 @@
             GM_setValue('openRouterApiKey', apiKeyInput.value.trim());
             GM_setValue('openRouterModel', model);
             GM_setValue('openRouterReasoningEffort', openRouterReasoningSelect.value || 'none');
+            GM_setValue('openRouterProvider', openRouterProviderInput.value.trim());
         } else {
             GM_setValue('apiKey', apiKeyInput.value.trim());
             GM_setValue('apiModel', model);
@@ -409,6 +413,14 @@
         deepSeekEndpointInput.value = GM_getValue('deepSeekEndpoint', DEFAULT_DEEPSEEK_ENDPOINT);
         deepSeekReasoningSelect.value = GM_getValue('deepSeekReasoningEffort', 'high');
         openRouterReasoningSelect.value = GM_getValue('openRouterReasoningEffort', 'none');
+        openRouterProviderInput.value = GM_getValue('openRouterProvider', '');
+    }
+    function getOpenRouterProviderRouting() {
+        const only = GM_getValue('openRouterProvider', '')
+            .split(',')
+            .map(value => value.trim())
+            .filter(Boolean);
+        return only.length ? { only } : null;
     }
     function loadCustomPrompt() {
         customPromptInput.value = GM_getValue('customPrompt', baseSystemPrompt);
@@ -655,11 +667,12 @@
             if (!apiKey) { reject(new Error('OpenRouter API 키가 설정되지 않았습니다.')); return; }
             const modelId = overrideModel || GM_getValue('openRouterModel', DEFAULT_OPENROUTER_MODEL);
             const reasoningEffort = GM_getValue('openRouterReasoningEffort', 'none');
+            const providerRouting = getOpenRouterProviderRouting();
             const contextBlock = buildCorrectionInput(text, userContext);
             GM_xmlhttpRequest({
                 method: 'POST', timeout: 120000, url: DEFAULT_OPENROUTER_ENDPOINT,
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, 'HTTP-Referer': 'https://www.eden-chat.com/', 'X-Title': 'Eden Chat Transcendent Corrector' },
-                data: JSON.stringify({ model: modelId, messages: [{ role: 'system', content: buildFinalPrompt() }, { role: 'user', content: contextBlock }], temperature: 0.7, reasoning: { effort: reasoningEffort, exclude: true }, stream: false }),
+                data: JSON.stringify({ model: modelId, messages: [{ role: 'system', content: buildFinalPrompt() }, { role: 'user', content: contextBlock }], temperature: 0.7, reasoning: { effort: reasoningEffort, exclude: true }, ...(providerRouting ? { provider: providerRouting } : {}), stream: false }),
                 onload(res) {
                     try {
                         const data = JSON.parse(res.responseText || '{}');
