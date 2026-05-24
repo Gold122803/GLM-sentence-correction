@@ -480,9 +480,23 @@
         btn.addEventListener('touchstart', startDrag, { passive: false });
     }
     function clampAllDraggableButtons() { dragStateMap.forEach(({ posXKey, posYKey }, btn) => clampDraggableButton(btn, posXKey, posYKey)); }
+    function bringUserscriptUiToFront() {
+        [settingBtn, quickBtn, panel, overlay, resultModal, toast].forEach(el => {
+            if (!el || !el.isConnected) return;
+            if (el.parentElement !== document.body || el.nextElementSibling) {
+                document.body.appendChild(el);
+            }
+        });
+        [settingBtn, quickBtn, panel, resultModal, toast].forEach(el => {
+            if (!el) return;
+            el.style.setProperty('z-index', '2147483647', 'important');
+        });
+        overlay.style.setProperty('z-index', '2147483646', 'important');
+    }
     initDraggableButton(settingBtn, 'btnPosX', 'btnPosY', window.innerWidth - 72, 88);
     initDraggableButton(quickBtn, 'quickBtnPosX', 'quickBtnPosY', window.innerWidth - 72, 152);
-    setTimeout(clampAllDraggableButtons, 100); setTimeout(clampAllDraggableButtons, 500);
+    setTimeout(() => { bringUserscriptUiToFront(); clampAllDraggableButtons(); }, 100);
+    setTimeout(() => { bringUserscriptUiToFront(); clampAllDraggableButtons(); }, 500);
     window.addEventListener('resize', clampAllDraggableButtons);
     function startDrag(e) {
         if (e.type === 'mousedown' && e.button !== 0) return;
@@ -998,6 +1012,7 @@
         quickBtn.style.setProperty('display', visible ? 'flex' : 'none', 'important');
         quickBtn.style.setProperty('visibility', 'visible', 'important');
         quickBtn.style.setProperty('opacity', '1', 'important');
+        bringUserscriptUiToFront();
         clampAllDraggableButtons();
     }
     syncTranslateBtn();
@@ -1006,5 +1021,6 @@
         if (location.href !== _lastUrl) { _lastUrl = location.href; setTimeout(syncTranslateBtn, 800); }
     }).observe(document, { subtree: true, childList: true });
     setInterval(syncTranslateBtn, 2000);
+    setInterval(bringUserscriptUiToFront, 500);
 
 })();
