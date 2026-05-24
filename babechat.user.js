@@ -235,6 +235,131 @@
         .trans-patch-btn { background-color: #6A3DE8; }
         #trans-toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: rgba(30,30,30,0.92); color: #fff; padding: 10px 20px; border-radius: 20px; font-size: 13px; font-family: sans-serif; z-index: 2147483647; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
         #trans-toast.show { opacity: 1; }
+        .trans-inline-correct-btn, .trans-inline-settings-btn {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            height: 24px !important;
+            min-width: 42px !important;
+            padding: 0 8px !important;
+            margin: 0 !important;
+            border-radius: 6px !important;
+            border: 1px solid rgba(255,255,255,0.22) !important;
+            color: #FFFFFF !important;
+            -webkit-text-fill-color: #FFFFFF !important;
+            font-size: 12px !important;
+            font-weight: 700 !important;
+            line-height: 1 !important;
+            cursor: pointer !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            pointer-events: auto !important;
+        }
+        .trans-inline-correct-btn { background: #6A3DE8 !important; }
+        .trans-inline-settings-btn { background: #FF4432 !important; }
+        .trans-inline-panel {
+            display: none;
+            width: 100%;
+            margin-top: 10px;
+            padding: 12px;
+            border: 1px solid rgba(255,255,255,0.14);
+            border-radius: 8px;
+            background: #1C1C1C;
+            color: #FFFFFF;
+            font-family: sans-serif;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+        }
+        .trans-inline-panel.trans-open { display: block; }
+        .trans-inline-panel * { box-sizing: border-box; }
+        .trans-inline-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .trans-inline-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+        .trans-inline-field.full { grid-column: 1 / -1; }
+        .trans-inline-field label { color: #D8D8D8; font-size: 12px; font-weight: 700; }
+        .trans-inline-field input,
+        .trans-inline-field select,
+        .trans-inline-field textarea {
+            width: 100%;
+            border: 1px solid #3B3B3B;
+            border-radius: 6px;
+            background: #111111;
+            color: #FFFFFF;
+            -webkit-text-fill-color: #FFFFFF;
+            padding: 8px;
+            font-size: 13px;
+            outline: none;
+        }
+        .trans-inline-field textarea { min-height: 120px; max-height: 260px; resize: vertical; line-height: 1.45; }
+        .trans-inline-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .trans-inline-action {
+            border: 0;
+            border-radius: 6px;
+            color: #FFFFFF;
+            -webkit-text-fill-color: #FFFFFF;
+            padding: 8px 10px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .trans-inline-save { background: #FF4432; }
+        .trans-inline-close { background: #61605A; }
+        .trans-inline-reset { background: #3B3B3B; }
+        .trans-inline-status { display: none; margin-top: 8px; color: #BFBFBF; font-size: 12px; line-height: 1.45; white-space: pre-wrap; }
+        .trans-inline-status.trans-show { display: block; }
+        .trans-inline-run-status {
+            display: block;
+            width: 100%;
+            margin-top: 8px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            background: #101010;
+            border: 1px solid rgba(255,255,255,0.12);
+            color: #D8D8D8;
+            font-size: 12px;
+            font-family: sans-serif;
+            line-height: 1.45;
+            white-space: pre-wrap;
+        }
+        .trans-inline-preview {
+            display: block;
+            width: 100%;
+            margin-top: 10px;
+            padding: 12px;
+            border: 1px solid rgba(106,61,232,0.38);
+            border-radius: 8px;
+            background: #181622;
+            color: #FFFFFF;
+            font-family: sans-serif;
+        }
+        .trans-inline-preview-title { margin: 0 0 8px; color: #FFFFFF; font-size: 13px; font-weight: 800; }
+        .trans-inline-preview-content {
+            max-height: 320px;
+            overflow: auto;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid rgba(255,255,255,0.12);
+            background: #101010;
+            color: #EDEDED;
+            white-space: pre-wrap;
+            line-height: 1.55;
+            font-size: 13px;
+        }
+        .trans-inline-preview-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .trans-inline-preview-action {
+            border: 0;
+            border-radius: 6px;
+            color: #FFFFFF;
+            -webkit-text-fill-color: #FFFFFF;
+            padding: 8px 10px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .trans-inline-apply { background: #6A3DE8; }
+        .trans-inline-preview-close { background: #61605A; }
+        @media (max-width: 560px) {
+            .trans-inline-grid { grid-template-columns: 1fr; }
+            .trans-inline-field.full { grid-column: auto; }
+        }
     `);
 
     // =============================================
@@ -389,6 +514,16 @@
         if (provider === 'deepseek') return GM_getValue('deepSeekApiKey', '');
         if (provider === 'openrouter') return GM_getValue('openRouterApiKey', '');
         return GM_getValue('apiKey', '');
+    }
+    function getApiKeyStorageKey(provider) {
+        if (provider === 'deepseek') return 'deepSeekApiKey';
+        if (provider === 'openrouter') return 'openRouterApiKey';
+        return 'apiKey';
+    }
+    function getModelStorageKey(provider) {
+        if (provider === 'deepseek') return 'deepSeekModel';
+        if (provider === 'openrouter') return 'openRouterModel';
+        return 'apiModel';
     }
     function saveProviderFields(provider) {
         const rawModel = modelSelect.value.trim() || getDefaultModel(provider);
@@ -766,20 +901,35 @@
         const style = window.getComputedStyle(el);
         return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
     }
-    function isOwnUiElement(el) { return !!el?.closest?.('#trans-setting-panel, #trans-result-modal, #trans-result-overlay, #trans-toast'); }
+    function isOwnUiElement(el) { return !!el?.closest?.('#trans-setting-panel, #trans-result-modal, #trans-result-overlay, #trans-toast, .trans-inline-correct-btn, .trans-inline-settings-btn, .trans-inline-panel'); }
     function findLastUserMessage() {
         const bubbles = Array.from(document.querySelectorAll('div.whitespace-pre-line.break-words.text-white'))
             .filter(el => isVisible(el) && (String(el.className || '').includes('bg-[#B56576]') || !!el.closest('.bg-\\[\\#B56576\\]')));
         const last = bubbles[bubbles.length - 1];
         return last ? last.textContent.trim() : '';
     }
+    let activeTargetRoot = null;
     function findLastAssistantMessageRoot() {
+        if (activeTargetRoot?.isConnected && isVisible(activeTargetRoot)) return activeTargetRoot;
         const roots = Array.from(document.querySelectorAll('div.flex.w-full.flex-col.gap-2.rounded-r-xl.rounded-bl-xl.bg-\\[\\#262727\\]'))
             .filter(el => isVisible(el) && !isOwnUiElement(el));
         return roots[roots.length - 1] || null;
     }
     function findMessageRoot(el) {
         return el?.closest?.('form, div.flex.w-full.flex-col.gap-2.rounded-r-xl.rounded-bl-xl.bg-\\[\\#262727\\]') || null;
+    }
+    function getPreviewHost(editArea = null, fallbackRoot = null) {
+        return findMessageRoot(editArea) || (fallbackRoot?.isConnected ? fallbackRoot : null) || document.querySelector('div.flex.flex-col.gap-3.px-5');
+    }
+    function setInlineRunStatus(host, message) {
+        if (!host) return;
+        let status = host.querySelector(':scope > .trans-inline-run-status');
+        if (!status) {
+            status = document.createElement('div');
+            status.className = 'trans-inline-run-status';
+            host.appendChild(status);
+        }
+        status.textContent = message;
     }
     function findLastPencilBtn() {
         const root = findLastAssistantMessageRoot() || document;
@@ -890,6 +1040,338 @@
         await confirmEditedMessage(editArea); await sleep(600);
     }
 
+    function findActionBar(root) {
+        return root?.querySelector?.('[data-capture-ignore="true"] .flex.items-center.gap-3') ||
+            root?.querySelector?.('[data-capture-ignore="true"]') ||
+            null;
+    }
+    function createInlineButton(className, text, title) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = className;
+        btn.textContent = text;
+        btn.title = title;
+        btn.setAttribute('aria-label', title);
+        return btn;
+    }
+    function getInlineActionRoot(el) {
+        return el?.closest?.('div.flex.w-full.flex-col.gap-2.rounded-r-xl.rounded-bl-xl.bg-\\[\\#262727\\]') || null;
+    }
+    function guardInlineButtonEvent(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation?.();
+    }
+    function bindInlineButton(btn, handler) {
+        let handledAt = 0;
+        const run = (e) => {
+            guardInlineButtonEvent(e);
+            const now = Date.now();
+            if (now - handledAt < 450) return;
+            handledAt = now;
+            handler(e);
+        };
+        ['pointerdown', 'mousedown', 'touchstart', 'click'].forEach(type => {
+            btn.addEventListener(type, run, { capture: true, passive: false });
+        });
+    }
+    function openSettingsPanel() {
+        bringUserscriptUiToFront();
+        panel.style.setProperty('display', panel.style.display === 'block' ? 'none' : 'block', 'important');
+        if (panel.style.display === 'block') {
+            panel.style.setProperty('position', 'fixed', 'important');
+            panel.style.setProperty('top', '50%', 'important');
+            panel.style.setProperty('left', '50%', 'important');
+            panel.style.setProperty('transform', 'translate(-50%, -50%)', 'important');
+            panel.style.setProperty('z-index', '2147483647', 'important');
+            clearStatus();
+        }
+    }
+    function openPromptSettings() {
+        const currentProvider = prompt('API 공급자를 입력하세요: gemini / deepseek / openrouter', providerSelect.value || 'gemini');
+        if (!currentProvider) return;
+        const provider = ['gemini', 'deepseek', 'openrouter'].includes(currentProvider.trim().toLowerCase())
+            ? currentProvider.trim().toLowerCase()
+            : 'gemini';
+        const currentKey = getSavedApiKey(provider);
+        const apiKey = prompt(`${getProviderDisplayName(provider)} API 키를 입력하세요`, currentKey || '');
+        if (apiKey === null) return;
+        providerSelect.value = provider;
+        apiKeyInput.value = apiKey.trim();
+        saveProviderFields(provider);
+        GM_setValue('apiProvider', provider);
+        loadProviderFields(provider);
+        showToast(`${getProviderDisplayName(provider)} API 키 저장 완료`, 2500);
+    }
+    function setInlineStatus(panelEl, message) {
+        const status = panelEl?.querySelector?.('.trans-inline-status');
+        if (!status) return;
+        status.textContent = message || '';
+        status.classList.toggle('trans-show', !!message);
+    }
+    function syncInlineProviderFields(panelEl) {
+        const provider = panelEl.querySelector('.trans-inline-provider')?.value || 'gemini';
+        panelEl.querySelectorAll('[data-provider-fields]').forEach(el => {
+            el.style.display = el.getAttribute('data-provider-fields') === provider ? '' : 'none';
+        });
+        const apiKey = panelEl.querySelector('.trans-inline-api-key');
+        const model = panelEl.querySelector('.trans-inline-model');
+        if (apiKey) apiKey.placeholder = `${getProviderDisplayName(provider)} API 키`;
+        if (model) model.placeholder = `예: ${getDefaultModel(provider)}`;
+    }
+    function populateInlineSettings(panelEl) {
+        const provider = GM_getValue('apiProvider', providerSelect.value || 'gemini');
+        panelEl.querySelector('.trans-inline-provider').value = provider;
+        panelEl.querySelector('.trans-inline-api-key').value = getSavedApiKey(provider);
+        panelEl.querySelector('.trans-inline-model').value = getSavedModel(provider);
+        panelEl.querySelector('.trans-inline-auto-replace').value = GM_getValue('showPreview', true) ? 'preview' : 'replace';
+        panelEl.querySelector('.trans-inline-prompt').value = GM_getValue('customPrompt', baseSystemPrompt);
+        panelEl.querySelector('.trans-inline-deepseek-endpoint').value = GM_getValue('deepSeekEndpoint', DEFAULT_DEEPSEEK_ENDPOINT);
+        panelEl.querySelector('.trans-inline-deepseek-reasoning').value = GM_getValue('deepSeekReasoningEffort', 'disabled');
+        panelEl.querySelector('.trans-inline-openrouter-reasoning').value = GM_getValue('openRouterReasoningEffort', 'none');
+        panelEl.querySelector('.trans-inline-openrouter-provider').value = GM_getValue('openRouterProvider', '');
+        syncInlineProviderFields(panelEl);
+        setInlineStatus(panelEl, '');
+    }
+    function saveInlineSettings(panelEl) {
+        try {
+            const provider = panelEl.querySelector('.trans-inline-provider').value || 'gemini';
+            const rawModel = panelEl.querySelector('.trans-inline-model').value.trim() || getDefaultModel(provider);
+            const model = provider === 'gemini' ? normalizeGeminiModel(rawModel) : rawModel;
+            GM_setValue('apiProvider', provider);
+            GM_setValue(getApiKeyStorageKey(provider), panelEl.querySelector('.trans-inline-api-key').value.trim());
+            GM_setValue(getModelStorageKey(provider), model);
+            GM_setValue('showPreview', panelEl.querySelector('.trans-inline-auto-replace').value !== 'replace');
+            GM_setValue('promptMode', 'custom');
+            GM_setValue('customPrompt', panelEl.querySelector('.trans-inline-prompt').value);
+            GM_setValue('deepSeekEndpoint', panelEl.querySelector('.trans-inline-deepseek-endpoint').value.trim() || DEFAULT_DEEPSEEK_ENDPOINT);
+            GM_setValue('deepSeekReasoningEffort', panelEl.querySelector('.trans-inline-deepseek-reasoning').value);
+            GM_setValue('openRouterReasoningEffort', panelEl.querySelector('.trans-inline-openrouter-reasoning').value);
+            GM_setValue('openRouterProvider', panelEl.querySelector('.trans-inline-openrouter-provider').value.trim());
+
+            providerSelect.value = provider;
+            loadProviderFields(provider);
+            customPromptInput.value = GM_getValue('customPrompt', baseSystemPrompt);
+            setAutoReplaceEnabled(!GM_getValue('showPreview', true));
+            setInlineStatus(panelEl, '저장 완료');
+            showToast('설정 저장 완료', 1800);
+        } catch (err) {
+            console.error('[초월 교정기 babechat inline save]', err);
+            setInlineStatus(panelEl, `저장 실패: ${err?.message || err}`);
+            alert(`저장 실패: ${err?.message || err}`);
+        }
+    }
+    function createInlineSettingsPanel() {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'trans-inline-panel';
+        wrapper.innerHTML = `
+            <div class="trans-inline-grid">
+                <div class="trans-inline-field">
+                    <label>API 공급자</label>
+                    <select class="trans-inline-provider">
+                        <option value="gemini">Gemini</option>
+                        <option value="deepseek">DeepSeek</option>
+                        <option value="openrouter">OpenRouter</option>
+                    </select>
+                </div>
+                <div class="trans-inline-field">
+                    <label>자동 교체</label>
+                    <select class="trans-inline-auto-replace">
+                        <option value="preview">미리보기</option>
+                        <option value="replace">바로 교체</option>
+                    </select>
+                </div>
+                <div class="trans-inline-field full">
+                    <label>API 키</label>
+                    <input class="trans-inline-api-key" type="password" autocomplete="off">
+                </div>
+                <div class="trans-inline-field full">
+                    <label>모델명</label>
+                    <input class="trans-inline-model" type="text" autocomplete="off">
+                </div>
+                <div class="trans-inline-field full" data-provider-fields="deepseek">
+                    <label>DeepSeek API 주소</label>
+                    <input class="trans-inline-deepseek-endpoint" type="text" autocomplete="off">
+                </div>
+                <div class="trans-inline-field" data-provider-fields="deepseek">
+                    <label>DeepSeek 추론 강도</label>
+                    <select class="trans-inline-deepseek-reasoning">
+                        <option value="disabled">Disabled</option>
+                        <option value="high">High</option>
+                        <option value="max">MAX</option>
+                    </select>
+                </div>
+                <div class="trans-inline-field" data-provider-fields="openrouter">
+                    <label>OpenRouter 추론 강도</label>
+                    <select class="trans-inline-openrouter-reasoning">
+                        <option value="none">None</option>
+                        <option value="minimal">Minimal</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="xhigh">XHigh</option>
+                    </select>
+                </div>
+                <div class="trans-inline-field full" data-provider-fields="openrouter">
+                    <label>OpenRouter 공급자 슬러그</label>
+                    <input class="trans-inline-openrouter-provider" type="text" placeholder="예: siliconflow 또는 siliconflow, deepinfra">
+                </div>
+                <div class="trans-inline-field full">
+                    <label>교정 프롬프트</label>
+                    <textarea class="trans-inline-prompt"></textarea>
+                </div>
+            </div>
+            <div class="trans-inline-actions">
+                <button type="button" class="trans-inline-action trans-inline-save">저장</button>
+                <button type="button" class="trans-inline-action trans-inline-reset">기본 프롬프트</button>
+                <button type="button" class="trans-inline-action trans-inline-close">닫기</button>
+            </div>
+            <div class="trans-inline-status"></div>
+        `;
+        const stopPanelBubble = (e) => { e.stopPropagation(); };
+        ['pointerdown', 'mousedown', 'touchstart', 'click'].forEach(type => {
+            wrapper.addEventListener(type, stopPanelBubble, { passive: false });
+        });
+        wrapper.querySelector('.trans-inline-provider').addEventListener('change', () => {
+            const provider = wrapper.querySelector('.trans-inline-provider').value;
+            wrapper.querySelector('.trans-inline-api-key').value = getSavedApiKey(provider);
+            wrapper.querySelector('.trans-inline-model').value = getSavedModel(provider);
+            syncInlineProviderFields(wrapper);
+        });
+        wrapper.querySelector('.trans-inline-save').addEventListener('click', e => {
+            guardInlineButtonEvent(e);
+            saveInlineSettings(wrapper);
+        });
+        wrapper.querySelector('.trans-inline-reset').addEventListener('click', e => {
+            guardInlineButtonEvent(e);
+            wrapper.querySelector('.trans-inline-prompt').value = baseSystemPrompt;
+            setInlineStatus(wrapper, '기본 프롬프트로 되돌렸습니다. 저장을 눌러 적용하세요.');
+        });
+        wrapper.querySelector('.trans-inline-close').addEventListener('click', e => {
+            guardInlineButtonEvent(e);
+            wrapper.classList.remove('trans-open');
+        });
+        populateInlineSettings(wrapper);
+        return wrapper;
+    }
+    function toggleInlineSettings(root) {
+        if (!root) return openPromptSettings();
+        let panelEl = root.querySelector('.trans-inline-panel');
+        if (!panelEl) {
+            panelEl = createInlineSettingsPanel();
+            root.appendChild(panelEl);
+        }
+        populateInlineSettings(panelEl);
+        panelEl.classList.toggle('trans-open');
+        if (panelEl.classList.contains('trans-open')) panelEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+    function closeInlinePreview(root, editArea = null) {
+        root?.querySelector?.('.trans-inline-preview')?.remove();
+        if (editArea && isEditStillOpen(editArea)) cancelEditMode(editArea);
+    }
+    function showInlinePreview(root, corrected, editArea) {
+        if (!root) return false;
+        root.querySelector('.trans-inline-preview')?.remove();
+        root.querySelector(':scope > .trans-inline-run-status')?.remove();
+        const preview = document.createElement('div');
+        preview.className = 'trans-inline-preview';
+        preview.innerHTML = `
+            <div class="trans-inline-preview-title">교정 결과 미리보기</div>
+            <div class="trans-inline-preview-content"></div>
+            <div class="trans-inline-preview-actions">
+                <button type="button" class="trans-inline-preview-action trans-inline-apply">이 결과로 교체</button>
+                <button type="button" class="trans-inline-preview-action trans-inline-preview-close">닫기</button>
+            </div>
+        `;
+        preview.querySelector('.trans-inline-preview-content').textContent = corrected;
+        preview.addEventListener('click', e => e.stopPropagation());
+        preview.addEventListener('pointerdown', e => e.stopPropagation());
+        preview.querySelector('.trans-inline-apply').addEventListener('click', async (e) => {
+            guardInlineButtonEvent(e);
+            try {
+                let area = editArea;
+                if (!area || !isEditStillOpen(area)) {
+                    activeTargetRoot = root;
+                    const pencilBtn = findLastPencilBtn();
+                    if (!pencilBtn) throw new Error('수정 버튼을 다시 찾을 수 없습니다.');
+                    pencilBtn.click();
+                    area = await waitForElement(findEditArea);
+                }
+                if (!area) throw new Error('편집창을 찾을 수 없습니다.');
+                const inserted = setEditableContent(area, corrected);
+                await sleep(250);
+                if (!inserted || normalizeEditableText(getEditableText(area)) !== normalizeEditableText(corrected)) {
+                    throw new Error('교정본을 편집창에 넣지 못했습니다.');
+                }
+                await confirmEditedMessage(area);
+                preview.remove();
+                showToast('교정 교체 완료', 1800);
+            } catch (err) {
+                console.error('[초월 교정기 babechat inline apply]', err);
+                alert(err?.message || String(err));
+            } finally {
+                activeTargetRoot = null;
+            }
+        });
+        preview.querySelector('.trans-inline-preview-close').addEventListener('click', (e) => {
+            guardInlineButtonEvent(e);
+            closeInlinePreview(root, editArea);
+            activeTargetRoot = null;
+        });
+        root.appendChild(preview);
+        preview.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        return true;
+    }
+    let lastDelegatedInlineAt = 0;
+    function handleInlineAction(action, target) {
+        const now = Date.now();
+        if (now - lastDelegatedInlineAt < 350) return;
+        lastDelegatedInlineAt = now;
+        activeTargetRoot = getInlineActionRoot(target) || activeTargetRoot;
+        if (action === 'correct') {
+            target.textContent = '시작';
+            setTimeout(() => { if (target.isConnected) target.textContent = '교정'; }, 1200);
+            showToast('교정 시작', 1800);
+            autoCorrect().catch(err => {
+                console.error('[초월 교정기 babechat inline]', err);
+                alert(err?.message || String(err));
+            });
+            return;
+        }
+        if (action === 'settings') {
+            toggleInlineSettings(activeTargetRoot);
+        }
+    }
+    function injectInlineButtons() {
+        const roots = Array.from(document.querySelectorAll('div.flex.w-full.flex-col.gap-2.rounded-r-xl.rounded-bl-xl.bg-\\[\\#262727\\]'))
+            .filter(el => isVisible(el) && !isOwnUiElement(el));
+        for (const root of roots) {
+            const actionBar = findActionBar(root);
+            if (!actionBar || actionBar.querySelector('.trans-inline-correct-btn')) continue;
+
+            const correctBtn = createInlineButton('trans-inline-correct-btn', '교정', '이 답변 교정');
+            correctBtn.dataset.transAction = 'correct';
+            bindInlineButton(correctBtn, () => {
+                activeTargetRoot = root;
+                showToast('교정 시작');
+                autoCorrect().catch(err => {
+                    console.error('[초월 교정기 babechat inline]', err);
+                    alert(err?.message || String(err));
+                });
+            });
+
+            const settingsInlineBtn = createInlineButton('trans-inline-settings-btn', '설정', '초월 교정 설정');
+            settingsInlineBtn.dataset.transAction = 'settings';
+            bindInlineButton(settingsInlineBtn, () => {
+                activeTargetRoot = root;
+                toggleInlineSettings(root);
+            });
+
+            actionBar.appendChild(correctBtn);
+            actionBar.appendChild(settingsInlineBtn);
+        }
+    }
+
     // =============================================
     //  모달 상태 관리
     // =============================================
@@ -928,6 +1410,7 @@
     // =============================================
     async function autoCorrect(options = {}) {
         const forceAutoReplace = options?.forceAutoReplace === true;
+        const requestedRoot = activeTargetRoot;
         if (!isChattingPage()) { showToast('채팅방 페이지에서만 사용 가능합니다.'); return; }
         const currentProvider = providerSelect.value || 'gemini';
         saveProviderFields(currentProvider);
@@ -937,7 +1420,14 @@
         GM_setValue('customPrompt', customPromptInput.value);
         activeApiProvider = currentProvider;
 
-        if (!getSavedApiKey(currentProvider).trim()) { setStatus(`${getProviderDisplayName(currentProvider)} API 키가 설정되지 않았습니다. 위 항목에서 입력 후 저장해주세요.`, 'err'); return; }
+        if (!getSavedApiKey(currentProvider).trim()) {
+            const msg = `${getProviderDisplayName(currentProvider)} API 키가 설정되지 않았습니다. 설정 버튼에서 입력 후 저장해주세요.`;
+            setStatus(msg, 'err');
+            showToast(msg, 4500);
+            if (activeTargetRoot?.isConnected) toggleInlineSettings(activeTargetRoot);
+            else openSettingsPanel();
+            return;
+        }
         translateBtn.disabled = true; quickBtn.disabled = true; clearStatus();
 
         try {
@@ -948,30 +1438,44 @@
             pencilBtn.click();
             const editArea = await waitForElement(findEditArea);
             if (!editArea) throw new Error('편집창이 열리지 않았습니다. 잠시 후 다시 시도해주세요.');
+            const previewHost = getPreviewHost(editArea, requestedRoot);
+            setInlineRunStatus(previewHost, '원문을 읽었습니다. 교정 요청 중...');
             const original = getEditableText(editArea).trim();
             if (!original) throw new Error('교정할 내용이 없습니다.');
             activeOriginalText = original; activeUserContext = userContext;
 
             const usePreview = !forceAutoReplace && autoReplaceToggle.getAttribute('aria-checked') !== 'true';
             if (usePreview) {
-                await cancelEditMode(editArea);
                 setStatus('② 교정 중… (Gemini는 실패 시 자동 재시도합니다)', 'info');
+                setInlineRunStatus(previewHost, '교정 중... API 응답을 기다리고 있습니다.');
                 const corrected = await callCorrection(original, null, userContext, currentProvider);
                 transHistory = [corrected]; transIndex = 0; modalModelSelect.value = getSavedModel(currentProvider);
-                panel.style.display = 'none'; overlay.style.display = 'block'; resultModal.style.display = 'flex'; updateModalState();
+                const finalPreviewHost = getPreviewHost(editArea, previewHost || requestedRoot);
+                if (showInlinePreview(finalPreviewHost, corrected, editArea)) {
+                    setStatus('미리보기를 답변 아래에 표시했습니다.', 'ok');
+                    showToast('교정 결과 도착', 1800);
+                } else {
+                    setInlineRunStatus(previewHost, '교정 결과는 도착했지만 미리보기를 붙일 위치를 찾지 못했습니다.');
+                    alert('교정 결과는 도착했지만 미리보기를 붙일 위치를 찾지 못했습니다.');
+                }
             } else {
                 setStatus('② 교정 중… (Gemini는 실패 시 자동 재시도합니다)', 'info');
+                setInlineRunStatus(previewHost, '교정 중... API 응답을 기다리고 있습니다.');
                 const corrected = await callCorrection(original, null, userContext, currentProvider);
                 setStatus('③ 교정본 삽입 중…', 'info');
+                setInlineRunStatus(previewHost, '교정본 삽입 중...');
                 await applyTranslation(corrected);
                 setStatus('✅ 교정 교체 완료!', 'ok');
+                setInlineRunStatus(previewHost, '교정 교체 완료');
                 setTimeout(() => { panel.style.display = 'none'; clearStatus(); }, 900);
             }
         } catch (err) {
             setStatus(`❌ ${err.message}`, 'err');
+            setInlineRunStatus(getPreviewHost(null, requestedRoot), `오류: ${err.message}`);
             console.error('[초월 교정기 babechat]', err);
         } finally {
             translateBtn.disabled = false; quickBtn.disabled = false;
+            activeTargetRoot = null;
         }
     }
 
@@ -999,6 +1503,14 @@
     });
     translateBtn.addEventListener('click', autoCorrect);
     quickBtn.addEventListener('click', (e) => { if (dragMoved) { e.preventDefault(); e.stopPropagation(); return; } autoCorrect({ forceAutoReplace: true }); });
+    ['pointerdown', 'mousedown', 'touchstart', 'click'].forEach(type => {
+        document.addEventListener(type, (e) => {
+            const target = e.target?.closest?.('.trans-inline-correct-btn, .trans-inline-settings-btn');
+            if (!target) return;
+            guardInlineButtonEvent(e);
+            handleInlineAction(target.dataset.transAction, target);
+        }, { capture: true, passive: false });
+    });
 
     // =============================================
     //  교정 버튼 표시 제어 (SPA 라우팅 대응)
@@ -1013,6 +1525,7 @@
         quickBtn.style.setProperty('visibility', 'visible', 'important');
         quickBtn.style.setProperty('opacity', '1', 'important');
         bringUserscriptUiToFront();
+        injectInlineButtons();
         clampAllDraggableButtons();
     }
     syncTranslateBtn();
@@ -1021,6 +1534,7 @@
         if (location.href !== _lastUrl) { _lastUrl = location.href; setTimeout(syncTranslateBtn, 800); }
     }).observe(document, { subtree: true, childList: true });
     setInterval(syncTranslateBtn, 2000);
+    setInterval(injectInlineButtons, 800);
     setInterval(bringUserscriptUiToFront, 500);
 
 })();
