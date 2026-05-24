@@ -187,9 +187,9 @@
             color: #FFFFFF !important;
             -webkit-text-fill-color: #FFFFFF !important;
         }
-        #trans-setting-btn { position: fixed; z-index: 2147483647; background-color: #FF4432; color: white; border: none; border-radius: 50%; width: 48px; height: 48px; font-size: 24px; cursor: move; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: background-color 0.3s; display: flex; align-items: center; justify-content: center; touch-action: none; }
+        #trans-setting-btn { position: fixed !important; z-index: 2147483647 !important; background: #FF4432 !important; color: #FFFFFF !important; border: 2px solid rgba(255,255,255,0.92) !important; border-radius: 50% !important; width: 54px !important; height: 54px !important; min-width: 54px !important; min-height: 54px !important; padding: 0 !important; margin: 0 !important; font-size: 25px !important; line-height: 1 !important; cursor: move !important; box-shadow: 0 8px 24px rgba(0,0,0,0.42), 0 0 0 3px rgba(255,68,50,0.24) !important; transition: background-color 0.3s, transform 0.15s !important; display: flex !important; align-items: center !important; justify-content: center !important; touch-action: none !important; visibility: visible !important; opacity: 1 !important; pointer-events: auto !important; isolation: isolate !important; }
         #trans-setting-btn:hover { background-color: #e03c2a; }
-        #trans-quick-btn { position: fixed; right: 20px; bottom: 80px; z-index: 2147483647; background-color: #6A3DE8; color: white; border: none; border-radius: 50%; width: 48px; height: 48px; font-size: 22px; cursor: move; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: background-color 0.3s, opacity 0.2s; display: none; align-items: center; justify-content: center; touch-action: none; }
+        #trans-quick-btn { position: fixed !important; z-index: 2147483647 !important; background: #6A3DE8 !important; color: #FFFFFF !important; border: 2px solid rgba(255,255,255,0.92) !important; border-radius: 50% !important; width: 54px !important; height: 54px !important; min-width: 54px !important; min-height: 54px !important; padding: 0 !important; margin: 0 !important; font-size: 23px !important; line-height: 1 !important; cursor: move !important; box-shadow: 0 8px 24px rgba(0,0,0,0.42), 0 0 0 3px rgba(106,61,232,0.24) !important; transition: background-color 0.3s, opacity 0.2s, transform 0.15s !important; display: none; align-items: center !important; justify-content: center !important; touch-action: none !important; visibility: visible !important; opacity: 1; pointer-events: auto !important; isolation: isolate !important; }
         #trans-quick-btn:hover { background-color: #5228CC; }
         #trans-quick-btn:disabled { opacity: 0.55; cursor: not-allowed; }
         #trans-setting-panel { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2147483647; background-color: #F7F7F5; border: 1px solid #C7C5BD; border-radius: 8px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); display: none; width: 320px; max-width: 85vw; }
@@ -242,12 +242,17 @@
     // =============================================
     const settingBtn = document.createElement('button');
     settingBtn.id = 'trans-setting-btn';
+    settingBtn.type = 'button';
+    settingBtn.title = '초월 교정 설정';
+    settingBtn.setAttribute('aria-label', '초월 교정 설정');
     settingBtn.innerHTML = '✏️';
     document.body.appendChild(settingBtn);
 
     const quickBtn = document.createElement('button');
     quickBtn.id = 'trans-quick-btn';
+    quickBtn.type = 'button';
     quickBtn.title = '저장된 설정으로 최신 답변 바로 교정';
+    quickBtn.setAttribute('aria-label', '최신 답변 바로 교정');
     quickBtn.innerHTML = '⚡';
     document.body.appendChild(quickBtn);
 
@@ -453,12 +458,15 @@
     const dragStateMap = new Map();
     function clampDraggableButton(btn, posXKey, posYKey) {
         const w = window.innerWidth, h = window.innerHeight;
-        const bW = btn.offsetWidth || 48, bH = btn.offsetHeight || 48;
+        const bW = btn.offsetWidth || 54, bH = btn.offsetHeight || 54;
         let l = parseFloat(btn.style.left), t = parseFloat(btn.style.top);
-        if (isNaN(l) || l < 0 || l > w - bW) l = w - bW - 20;
-        if (isNaN(t) || t < 0 || t > h - bH) t = h - bH - 20;
+        if (isNaN(l) || l < 12 || l > w - bW - 12) l = w - bW - 18;
+        if (isNaN(t) || t < 12 || t > h - bH - 12) t = 88;
+        l = Math.max(12, Math.min(l, w - bW - 12));
+        t = Math.max(12, Math.min(t, h - bH - 12));
         btn.style.left = l + 'px'; btn.style.top = t + 'px';
         btn.style.bottom = 'auto'; btn.style.right = 'auto';
+        btn.style.visibility = 'visible'; btn.style.pointerEvents = 'auto';
         GM_setValue(posXKey, btn.style.left); GM_setValue(posYKey, btn.style.top);
     }
     function initDraggableButton(btn, posXKey, posYKey, defaultLeft, defaultTop) {
@@ -472,8 +480,8 @@
         btn.addEventListener('touchstart', startDrag, { passive: false });
     }
     function clampAllDraggableButtons() { dragStateMap.forEach(({ posXKey, posYKey }, btn) => clampDraggableButton(btn, posXKey, posYKey)); }
-    initDraggableButton(settingBtn, 'btnPosX', 'btnPosY', window.innerWidth - 68, window.innerHeight - 68);
-    initDraggableButton(quickBtn, 'quickBtnPosX', 'quickBtnPosY', window.innerWidth - 68, window.innerHeight - 128);
+    initDraggableButton(settingBtn, 'btnPosX', 'btnPosY', window.innerWidth - 72, 88);
+    initDraggableButton(quickBtn, 'quickBtnPosX', 'quickBtnPosY', window.innerWidth - 72, 152);
     setTimeout(clampAllDraggableButtons, 100); setTimeout(clampAllDraggableButtons, 500);
     window.addEventListener('resize', clampAllDraggableButtons);
     function startDrag(e) {
@@ -984,7 +992,13 @@
     function syncTranslateBtn() {
         const visible = isChattingPage();
         translateBtn.style.display = visible ? 'inline-block' : 'none';
-        quickBtn.style.display = visible ? 'flex' : 'none';
+        settingBtn.style.setProperty('display', 'flex', 'important');
+        settingBtn.style.setProperty('visibility', 'visible', 'important');
+        settingBtn.style.setProperty('opacity', '1', 'important');
+        quickBtn.style.setProperty('display', visible ? 'flex' : 'none', 'important');
+        quickBtn.style.setProperty('visibility', 'visible', 'important');
+        quickBtn.style.setProperty('opacity', '1', 'important');
+        clampAllDraggableButtons();
     }
     syncTranslateBtn();
     let _lastUrl = location.href;
