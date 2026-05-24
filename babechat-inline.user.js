@@ -911,6 +911,18 @@
         return last ? last.textContent.trim() : '';
     }
     let activeTargetRoot = null;
+    let inlineRootSeq = 0;
+    const inlineRootMap = new Map();
+    function getOrAssignInlineRootId(root) {
+        if (!root) return '';
+        if (!root.dataset.transRootId) root.dataset.transRootId = `trans-root-${++inlineRootSeq}`;
+        inlineRootMap.set(root.dataset.transRootId, root);
+        return root.dataset.transRootId;
+    }
+    function getInlineRootById(id) {
+        const root = id ? inlineRootMap.get(id) : null;
+        return root?.isConnected ? root : null;
+    }
     function findLastAssistantMessageRoot() {
         if (activeTargetRoot?.isConnected && isVisible(activeTargetRoot)) return activeTargetRoot;
         const roots = Array.from(document.querySelectorAll('div.flex.w-full.flex-col.gap-2.rounded-r-xl.rounded-bl-xl.bg-\\[\\#262727\\]'))
@@ -1057,6 +1069,8 @@
         return btn;
     }
     function getInlineActionRoot(el) {
+        const byId = getInlineRootById(el?.dataset?.transRootId);
+        if (byId) return byId;
         return el?.closest?.('div.flex.w-full.flex-col.gap-2.rounded-r-xl.rounded-bl-xl.bg-\\[\\#262727\\]') || null;
     }
     function guardInlineButtonEvent(e) {
@@ -1330,6 +1344,10 @@
         if (now - lastDelegatedInlineAt < 350) return;
         lastDelegatedInlineAt = now;
         activeTargetRoot = getInlineActionRoot(target) || activeTargetRoot;
+        if (!activeTargetRoot?.isConnected) {
+            alert('교정할 답변 위치를 찾지 못했습니다. 해당 답변 아래의 교정 버튼을 다시 눌러주세요.');
+            return;
+        }
         if (action === 'correct') {
             target.textContent = '시작';
             setTimeout(() => { if (target.isConnected) target.textContent = '교정'; }, 1200);
@@ -1348,11 +1366,13 @@
         const roots = Array.from(document.querySelectorAll('div.flex.w-full.flex-col.gap-2.rounded-r-xl.rounded-bl-xl.bg-\\[\\#262727\\]'))
             .filter(el => isVisible(el) && !isOwnUiElement(el));
         for (const root of roots) {
+            const rootId = getOrAssignInlineRootId(root);
             const actionBar = findActionBar(root);
             if (!actionBar || actionBar.querySelector('.trans-inline-correct-btn')) continue;
 
             const correctBtn = createInlineButton('trans-inline-correct-btn', '교정', '이 답변 교정');
             correctBtn.dataset.transAction = 'correct';
+            correctBtn.dataset.transRootId = rootId;
             bindInlineButton(correctBtn, () => {
                 activeTargetRoot = root;
                 showToast('교정 시작');
@@ -1364,6 +1384,7 @@
 
             const settingsInlineBtn = createInlineButton('trans-inline-settings-btn', '설정', '초월 교정 설정');
             settingsInlineBtn.dataset.transAction = 'settings';
+            settingsInlineBtn.dataset.transRootId = rootId;
             bindInlineButton(settingsInlineBtn, () => {
                 activeTargetRoot = root;
                 toggleInlineSettings(root);
