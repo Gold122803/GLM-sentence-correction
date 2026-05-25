@@ -911,8 +911,10 @@
         return last ? last.textContent.trim() : '';
     }
     let activeTargetRoot = null;
+    let activePencilBtn = null;
     let inlineRootSeq = 0;
     const inlineRootMap = new Map();
+    const inlinePencilMap = new Map();
     function getOrAssignInlineRootId(root) {
         if (!root) return '';
         if (!root.dataset.transRootId) root.dataset.transRootId = `trans-root-${++inlineRootSeq}`;
@@ -922,6 +924,10 @@
     function getInlineRootById(id) {
         const root = id ? inlineRootMap.get(id) : null;
         return root?.isConnected ? root : null;
+    }
+    function getInlinePencilById(id) {
+        const btn = id ? inlinePencilMap.get(id) : null;
+        return btn?.isConnected && isVisible(btn) ? btn : null;
     }
     function findLastAssistantMessageRoot() {
         if (activeTargetRoot?.isConnected && isVisible(activeTargetRoot)) return activeTargetRoot;
@@ -946,12 +952,19 @@
         status.textContent = message;
     }
     function findLastPencilBtn() {
+        if (activePencilBtn?.isConnected && isVisible(activePencilBtn)) return activePencilBtn;
         const root = findLastAssistantMessageRoot() || document;
         const pencilBtns = Array.from(root.querySelectorAll('button')).filter(btn => {
             if (!isVisible(btn) || btn.disabled || isOwnUiElement(btn)) return false;
             return !!btn.querySelector('svg[viewBox="0 0 20 20"] path[d^="M9.944 6.983"]');
         });
         return pencilBtns[pencilBtns.length - 1] || null;
+    }
+    function findPencilBtnIn(scope) {
+        return Array.from(scope?.querySelectorAll?.('button') || []).find(btn => {
+            if (!isVisible(btn) || btn.disabled || isOwnUiElement(btn)) return false;
+            return !!btn.querySelector('svg[viewBox="0 0 20 20"] path[d^="M9.944 6.983"]');
+        }) || null;
     }
     function findEditArea() {
         const candidates = Array.from(document.querySelectorAll('textarea[name="message"]')).filter(el => isVisible(el));
@@ -1072,6 +1085,11 @@
         const byId = getInlineRootById(el?.dataset?.transRootId);
         if (byId) return byId;
         return el?.closest?.('div.flex.w-full.flex-col.gap-2.rounded-r-xl.rounded-bl-xl.bg-\\[\\#262727\\]') || null;
+    }
+    function getInlineActionBar(el) {
+        return el?.closest?.('[data-capture-ignore="true"] .flex.items-center.gap-3') ||
+            el?.closest?.('[data-capture-ignore="true"]') ||
+            null;
     }
     function guardInlineButtonEvent(e) {
         e.preventDefault();
@@ -1327,12 +1345,14 @@
                 alert(err?.message || String(err));
             } finally {
                 activeTargetRoot = null;
+                activePencilBtn = null;
             }
         });
         preview.querySelector('.trans-inline-preview-close').addEventListener('click', (e) => {
             guardInlineButtonEvent(e);
             closeInlinePreview(root, editArea);
             activeTargetRoot = null;
+            activePencilBtn = null;
         });
         root.appendChild(preview);
         preview.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -1343,9 +1363,17 @@
         const now = Date.now();
         if (now - lastDelegatedInlineAt < 350) return;
         lastDelegatedInlineAt = now;
+        activePencilBtn = null;
         activeTargetRoot = getInlineActionRoot(target) || activeTargetRoot;
+        activePencilBtn = getInlinePencilById(target?.dataset?.transRootId) ||
+            findPencilBtnIn(getInlineActionBar(target)) ||
+            findPencilBtnIn(activeTargetRoot);
         if (!activeTargetRoot?.isConnected) {
             alert('교정할 답변 위치를 찾지 못했습니다. 해당 답변 아래의 교정 버튼을 다시 눌러주세요.');
+            return;
+        }
+        if (action === 'correct' && (!activePencilBtn?.isConnected || !isVisible(activePencilBtn))) {
+            alert('이 답변의 수정 버튼을 찾지 못했습니다. 해당 답변 위에 마우스를 올린 뒤 다시 눌러주세요.');
             return;
         }
         if (action === 'correct') {
@@ -1368,13 +1396,22 @@
         for (const root of roots) {
             const rootId = getOrAssignInlineRootId(root);
             const actionBar = findActionBar(root);
-            if (!actionBar || actionBar.querySelector('.trans-inline-correct-btn')) continue;
+            if (!actionBar) continue;
+            const pencilBtn = findPencilBtnIn(actionBar);
+            if (!pencilBtn) continue;
+            inlinePencilMap.set(rootId, pencilBtn);
+            const existingCorrectBtn = actionBar.querySelector('.trans-inline-correct-btn');
+            const existingSettingsBtn = actionBar.querySelector('.trans-inline-settings-btn');
+            if (existingCorrectBtn) existingCorrectBtn.dataset.transRootId = rootId;
+            if (existingSettingsBtn) existingSettingsBtn.dataset.transRootId = rootId;
+            if (existingCorrectBtn && existingSettingsBtn) continue;
 
             const correctBtn = createInlineButton('trans-inline-correct-btn', '교정', '이 답변 교정');
             correctBtn.dataset.transAction = 'correct';
             correctBtn.dataset.transRootId = rootId;
             bindInlineButton(correctBtn, () => {
                 activeTargetRoot = root;
+                activePencilBtn = pencilBtn;
                 showToast('교정 시작');
                 autoCorrect().catch(err => {
                     console.error('[초월 교정기 babechat inline]', err);
@@ -1387,6 +1424,7 @@
             settingsInlineBtn.dataset.transRootId = rootId;
             bindInlineButton(settingsInlineBtn, () => {
                 activeTargetRoot = root;
+                activePencilBtn = pencilBtn;
                 toggleInlineSettings(root);
             });
 
@@ -1499,6 +1537,7 @@
         } finally {
             translateBtn.disabled = false; quickBtn.disabled = false;
             activeTargetRoot = null;
+            activePencilBtn = null;
         }
     }
 
