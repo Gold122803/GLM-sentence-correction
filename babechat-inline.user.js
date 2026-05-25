@@ -6,6 +6,7 @@
 // @downloadURL  https://raw.githubusercontent.com/Gold122803/GLM-sentence-correction/main/release/babechat-inline.user.js
 // @description  babechat.ai AI 메시지를 인라인 버튼으로 교정·교체. 플로팅 동그라미 버튼 없음.
 // @match        https://babechat.ai/*
+// @match        https://www.babechat.ai/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addStyle
@@ -675,7 +676,7 @@
     function showToast(msg, duration = 3000) { toast.textContent = msg; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), duration); }
     function setStatus(msg, type = 'info') { statusBox.textContent = msg; statusBox.className = `active ${type}`; }
     function clearStatus() { statusBox.className = ''; statusBox.textContent = ''; }
-    function isChattingPage() { return location.hostname === 'babechat.ai'; }
+    function isChattingPage() { return location.hostname === 'babechat.ai' || location.hostname === 'www.babechat.ai'; }
     function buildFinalPrompt() { return customPromptInput?.value || GM_getValue('customPrompt', baseSystemPrompt); }
     function stripOuterFence(text) { return text.replace(/^```[^\n]*\n([\s\S]*?)\n```\s*$/m, '$1').trim(); }
     function createProtectedCorrectionInput(text) {
