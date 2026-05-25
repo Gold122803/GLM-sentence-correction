@@ -1097,17 +1097,9 @@
         e.stopImmediatePropagation?.();
     }
     function bindInlineButton(btn, handler) {
-        let handledAt = 0;
-        const run = (e) => {
-            guardInlineButtonEvent(e);
-            const now = Date.now();
-            if (now - handledAt < 450) return;
-            handledAt = now;
-            handler(e);
-        };
-        ['pointerdown', 'mousedown', 'touchstart', 'click'].forEach(type => {
-            btn.addEventListener(type, run, { capture: true, passive: false });
-        });
+        // Inline actions are handled only by the document-level capture listener.
+        // Mobile Firefox can emit touch/pointer/click sequences that double-run
+        // per-button handlers and leave the active edit target one response behind.
     }
     function openSettingsPanel() {
         bringUserscriptUiToFront();
@@ -1361,8 +1353,9 @@
     let lastDelegatedInlineAt = 0;
     function handleInlineAction(action, target) {
         const now = Date.now();
-        if (now - lastDelegatedInlineAt < 350) return;
+        if (now - lastDelegatedInlineAt < 900) return;
         lastDelegatedInlineAt = now;
+        if (action === 'correct' && target.dataset.transBusy === '1') return;
         activePencilBtn = null;
         activeTargetRoot = getInlineActionRoot(target) || activeTargetRoot;
         activePencilBtn = getInlinePencilById(target?.dataset?.transRootId) ||
@@ -1377,12 +1370,16 @@
             return;
         }
         if (action === 'correct') {
+            target.dataset.transBusy = '1';
             target.textContent = '시작';
-            setTimeout(() => { if (target.isConnected) target.textContent = '교정'; }, 1200);
+            setTimeout(() => { if (target.isConnected && target.dataset.transBusy !== '1') target.textContent = '교정'; }, 1200);
             showToast('교정 시작', 1800);
             autoCorrect().catch(err => {
                 console.error('[초월 교정기 babechat inline]', err);
                 alert(err?.message || String(err));
+            }).finally(() => {
+                delete target.dataset.transBusy;
+                if (target.isConnected) target.textContent = '교정';
             });
             return;
         }
