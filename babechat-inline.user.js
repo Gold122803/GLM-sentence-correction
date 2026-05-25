@@ -30,7 +30,7 @@
 
     // v4.1: 사용자가 기존에 저장한 모델명을 존중합니다.
     // 새 설치/초기화 시에는 기존 v4.0 기본값을 유지합니다.
-    const DEFAULT_GEMINI_MODEL = 'gemini-flash-lite-latest';
+    const DEFAULT_GEMINI_MODEL = 'gemini-3-flash-preview';
     const DEFAULT_DEEPSEEK_MODEL = 'deepseek-v4-flash';
     const DEFAULT_DEEPSEEK_ENDPOINT = 'https://api.deepseek.com/chat/completions';
     const DEFAULT_OPENROUTER_MODEL = 'openai/gpt-4o-mini';
