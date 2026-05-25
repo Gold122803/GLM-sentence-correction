@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         초월 교정기 Protected Context for eden-chat
+// @name         초월 교정기 Protected Context for elyn.ai
 // @namespace    http://tampermonkey.net/
 // @version      5.2.0-protected-context
-// @description  eden-chat AI 메시지를 교정·교체. 코드블럭/<details>을 보호 토큰으로 보존하고 맥락 원문으로 참조.
-// @match        https://www.eden-chat.com/*
+// @description  elyn.ai AI 메시지를 교정·교체. 코드블럭/<details>을 보호 토큰으로 보존하고 맥락 원문으로 참조.
+// @match        https://elyn.ai/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addStyle
@@ -537,7 +537,7 @@
     function showToast(msg, duration = 3000) { toast.textContent = msg; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), duration); }
     function setStatus(msg, type = 'info') { statusBox.textContent = msg; statusBox.className = `active ${type}`; }
     function clearStatus() { statusBox.className = ''; statusBox.textContent = ''; }
-    function isChattingPage() { return location.hostname === 'www.eden-chat.com'; }
+    function isChattingPage() { return location.pathname.startsWith('/chat/'); }
     function buildFinalPrompt() { return customPromptInput?.value || GM_getValue('customPrompt', baseSystemPrompt); }
     function stripOuterFence(text) { return text.replace(/^```[^\n]*\n([\s\S]*?)\n```\s*$/m, '$1').trim(); }
     function createProtectedCorrectionInput(text) {
@@ -736,7 +736,7 @@
             const { contextBlock, protectedBlocks } = buildCorrectionInput(text, userContext);
             GM_xmlhttpRequest({
                 method: 'POST', timeout: 120000, url: DEFAULT_OPENROUTER_ENDPOINT,
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, 'HTTP-Referer': 'https://www.eden-chat.com/', 'X-Title': 'Eden Chat Transcendent Corrector' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, 'HTTP-Referer': 'https://elyn.ai/', 'X-Title': 'Elyn AI Transcendent Corrector' },
                 data: JSON.stringify({ model: modelId, messages: [{ role: 'system', content: buildFinalPrompt() }, { role: 'user', content: contextBlock }], temperature: 0.7, reasoning: { effort: reasoningEffort, exclude: true }, ...(providerRouting ? { provider: providerRouting } : {}), stream: false }),
                 onload(res) {
                     try {
@@ -762,51 +762,47 @@
     }
 
     // =============================================
-    //  eden-chat UI 자동화
+    //  elyn.ai UI 자동화
     // =============================================
     function findLastUserMessage() {
-        const msgs = document.querySelectorAll('div.hidden.lg\\:block.whitespace-pre-line.text-white');
-        if (!msgs.length) return '';
-        return Array.from(msgs[msgs.length - 1].querySelectorAll('span'))
-            .map(s => s.textContent.trim())
-            .filter(Boolean)
-            .join('\n');
+        const userMsgs = document.querySelectorAll('[data-message-id^="user-"]');
+        if (!userMsgs.length) return '';
+        const last = userMsgs[userMsgs.length - 1];
+        return Array.from(last.querySelectorAll('p.whitespace-pre-wrap')).map(p => p.textContent.trim()).filter(Boolean).join('\n');
     }
     function isVisible(el) {
         if (!el || !el.isConnected) return false;
         const rect = el.getBoundingClientRect(); const style = window.getComputedStyle(el);
         return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
     }
-    function findMessageRoot(el) { return el?.closest?.('[data-message-id], article, main, section') || null; }
+    function findMessageRoot(el) { return el?.closest?.('[data-message-id]') || null; }
     function findLastPencilBtn() {
-        const pencilBtns = Array.from(document.querySelectorAll('button[aria-label="수정"]'))
-            .filter(btn => isVisible(btn) && !btn.disabled && !isOwnUiElement(btn));
+        const allBtns = document.querySelectorAll('button[data-chat-interactive="true"]');
+        const pencilBtns = Array.from(allBtns).filter(btn => {
+            const messageRoot = findMessageRoot(btn);
+            return isVisible(btn) && !btn.disabled && btn.querySelector('.lucide-pencil') && !messageRoot?.getAttribute('data-message-id')?.startsWith('user-');
+        });
         return pencilBtns[pencilBtns.length - 1] || null;
     }
-    function findEditArea(options = {}) {
-        const requireText = options?.requireText === true;
-        const candidates = Array.from(document.querySelectorAll('textarea'))
-            .filter(el => isVisible(el) && !isOwnUiElement(el));
-        const withText = candidates.filter(el => normalizeEditableText(el.value));
-        if (requireText) return withText[withText.length - 1] || null;
-
-        const exact = candidates.find(el => el.getAttribute('placeholder') === '메시지 내용을 입력하세요...');
-        return withText[withText.length - 1] || exact || candidates[candidates.length - 1] || null;
-    }    async function waitForElement(getter, timeout = 2500, interval = 100) {
+    function findEditArea() {
+        const candidates = Array.from(document.querySelectorAll('[contenteditable="true"]')).filter(el => isVisible(el));
+        return candidates.find(el => el.classList.contains('whitespace-pre-wrap')) || candidates[candidates.length - 1] || null;
+    }
+    async function waitForElement(getter, timeout = 2500, interval = 100) {
         const started = Date.now(); let found = getter();
         while (!found && Date.now() - started < timeout) { await sleep(interval); found = getter(); }
         return found;
     }
-    async function waitForEditAreaWithText(timeout = 3500, interval = 100) {
-        return waitForElement(() => findEditArea({ requireText: true }), timeout, interval);
-    }    function isOwnUiElement(el) { return !!el?.closest?.('#trans-setting-panel, #trans-result-modal, #trans-result-overlay, #trans-toast'); }
+    function isOwnUiElement(el) { return !!el?.closest?.('#trans-setting-panel, #trans-result-modal, #trans-result-overlay, #trans-toast'); }
     function getButtonLabel(btn) { return [btn.textContent, btn.getAttribute('aria-label'), btn.getAttribute('title')].filter(Boolean).join(' '); }
     function isSaveLikeButton(btn) {
+        const className = typeof btn.className === 'string' ? btn.className : String(btn.className || '');
         const label = getButtonLabel(btn);
-        const hasSaveIcon = !!btn.querySelector('.lucide-save, svg[class*="save"], svg[class*="Save"]');
+        const hasCheckIcon = !!btn.querySelector('.lucide-check, .lucide-circle-check, svg[class*="check"], svg[class*="Check"]');
+        const looksGreen = className.includes('hover:bg-green-500') || className.includes('bg-green-500') || className.includes('text-green');
         const hasSaveLabel = /저장|수정\s*확정|확정|완료|적용|save|done|confirm|apply/i.test(label);
         const hasCancelLabel = /취소|닫기|cancel|close/i.test(label);
-        return !hasCancelLabel && (hasSaveIcon || hasSaveLabel);
+        return !hasCancelLabel && (hasCheckIcon || looksGreen || hasSaveLabel);
     }
     function findSaveBtn(scopeEl = null, tried = new Set()) {
         const scopes = []; const messageRoot = findMessageRoot(scopeEl);
@@ -817,7 +813,7 @@
         }
         return null;
     }
-    function isEditStillOpen(editArea) { return !!editArea?.isConnected && isVisible(editArea); }
+    function isEditStillOpen(editArea) { return !!editArea?.isConnected && editArea.getAttribute('contenteditable') === 'true' && isVisible(editArea); }
     async function waitForEditClosed(editArea, timeout = 1500, interval = 100) {
         const started = Date.now();
         while (Date.now() - started < timeout) { if (!isEditStillOpen(editArea)) return true; await sleep(interval); }
@@ -832,10 +828,9 @@
             if (await waitForEditClosed(editArea)) return;
             await sleep(250);
         }
-        throw new Error('교정본은 입력됐지만 수정 확정 버튼을 누르지 못했습니다. eden-chat 버튼 구조가 바뀐 것 같습니다.');
+        throw new Error('교정본은 입력됐지만 수정 확정 버튼을 누르지 못했습니다. elyn.ai 버튼 구조가 바뀐 것 같습니다.');
     }
     function normalizeEditableText(text) { return (text || '').replace(/\r\n/g, '\n').trim(); }
-    function getEditableText(el) { return el?.tagName === 'TEXTAREA' ? el.value : el?.innerText || ''; }
     function fireEditableEvents(el, text, inputType = 'insertText') {
         el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType, data: text }));
         el.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType, data: text }));
@@ -844,13 +839,6 @@
     }
     function setEditableContent(el, text) {
         el.focus();
-        if (el.tagName === 'TEXTAREA') {
-            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
-            if (nativeInputValueSetter) nativeInputValueSetter.call(el, text);
-            else el.value = text;
-            fireEditableEvents(el, text, 'insertText');
-            return normalizeEditableText(el.value) === normalizeEditableText(text);
-        }
         const selection = window.getSelection(); const range = document.createRange();
         range.selectNodeContents(el); selection.removeAllRanges(); selection.addRange(range);
         document.execCommand('selectAll', false, null);
@@ -860,19 +848,20 @@
         return normalizeEditableText(el.innerText) === normalizeEditableText(text);
     }
     async function applyTranslation(translated) {
-        let editArea = findEditArea({ requireText: true });
+        let editArea = findEditArea();
         if (!editArea) {
             const pencilBtn = findLastPencilBtn();
             if (!pencilBtn) throw new Error('수정 버튼을 찾을 수 없습니다. 채팅 페이지를 확인해주세요.');
-            pencilBtn.click(); editArea = await waitForEditAreaWithText();
+            pencilBtn.click(); editArea = await waitForElement(findEditArea);
         }
         if (!editArea) throw new Error('편집창을 열 수 없습니다.');
         let inserted = setEditableContent(editArea, translated);
         await sleep(250);
-        if (!inserted || normalizeEditableText(getEditableText(editArea)) !== normalizeEditableText(translated)) { inserted = setEditableContent(editArea, translated); await sleep(250); }
-        if (!inserted || normalizeEditableText(getEditableText(editArea)) !== normalizeEditableText(translated)) throw new Error('교정본을 편집창에 넣지 못했습니다. eden-chat 편집창 구조가 바뀐 것 같습니다.');
+        if (!inserted || normalizeEditableText(editArea.innerText) !== normalizeEditableText(translated)) { inserted = setEditableContent(editArea, translated); await sleep(250); }
+        if (!inserted || normalizeEditableText(editArea.innerText) !== normalizeEditableText(translated)) throw new Error('교정본을 편집창에 넣지 못했습니다. elyn.ai 편집창 구조가 바뀐 것 같습니다.');
         await confirmEditedMessage(editArea); await sleep(600);
     }
+
     // =============================================
     //  모달 상태 관리
     // =============================================
@@ -929,9 +918,9 @@
             if (!pencilBtn) throw new Error('AI 메시지의 수정 버튼을 찾을 수 없습니다. 마우스를 AI 메시지 위에 올려 두세요.');
             const userContext = findLastUserMessage();
             pencilBtn.click();
-            const editArea = await waitForEditAreaWithText();
-            if (!editArea) throw new Error('편집창 본문을 찾지 못했습니다. eden-chat 수정창이 열렸는지 확인해주세요.');
-            const original = getEditableText(editArea).trim();
+            const editArea = await waitForElement(findEditArea);
+            if (!editArea) throw new Error('편집창이 열리지 않았습니다. 잠시 후 다시 시도해주세요.');
+            const original = editArea.innerText.trim();
             if (!original) throw new Error('교정할 내용이 없습니다.');
             activeOriginalText = original; activeUserContext = userContext;
 
@@ -953,7 +942,7 @@
             }
         } catch (err) {
             setStatus(`❌ ${err.message}`, 'err');
-            console.error('[초월 교정기 eden-chat v4.1]', err);
+            console.error('[초월 교정기 elyn v4.1]', err);
         } finally {
             translateBtn.disabled = false; quickBtn.disabled = false;
         }

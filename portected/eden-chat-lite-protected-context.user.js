@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         초월 교정기 Protected Context for eden-chat
+// @name         초월 교정기 Lite Protected Context for eden-chat
 // @namespace    http://tampermonkey.net/
 // @version      5.2.0-protected-context
-// @description  eden-chat AI 메시지를 교정·교체. 코드블럭/<details>을 보호 토큰으로 보존하고 맥락 원문으로 참조.
+// @description  eden-chat AI 메시지를 교정·교체. 코드블럭을 보호 토큰으로 보존하고 맥락 원문으로 참조.
 // @match        https://www.eden-chat.com/*
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -20,8 +20,6 @@
     //  상수
     // =============================================
     const CODE_BLOCK_RE = /```([\s\S]*?)```/g;
-    const DETAILS_BLOCK_RE = /<details\b[\s\S]*?<\/details>/gi;
-    const PROTECTED_BLOCK_TOKEN_RE = /@@TC_PROTECTED_BLOCK_(\d+)@@/g;
 
     // v4.1: 사용자가 기존에 저장한 모델명을 존중합니다.
     // 새 설치/초기화 시에는 기존 v4.0 기본값을 유지합니다.
@@ -37,33 +35,28 @@
     const GEMINI_RETRY_BASE_DELAY_MS = 1200;
 
     const baseSystemPrompt = `[역할 및 목적]
-당신은 한국어 문장 교정 전문가다. 입력된 텍스트에서 <details> 블록과 코드블럭은 맥락 참고용 원문으로만 사용하고, 실제 교정 대상은 보호 토큰 바깥의 한국어 본문, 서술, NPC 대사다.
+당신은 한국어 문장 교정 전문가다. 입력된 텍스트의 원문 형식과 구조를 유지하면서 한국어 본문과 NPC 대사를 자연스럽고 읽기 좋게 다듬는다.
 
-목표는 원문의 형식과 구조, 사건, 정보, 감정선, 캐릭터성, 관계, 말투, 호칭, 장면 의도를 유지한 채 한국어 문장을 자연스럽고 읽기 좋게 다듬는 것이다. 원문에 없는 사건, 감정, 설명, 행동, 관계 진전, 대사, 설정은 추가하지 않는다.
+목표는 원문의 사건, 정보, 감정선, 캐릭터성, 관계, 말투, 호칭, 장면 의도를 유지한 채 한국어 문장을 교정하는 것이다. 원문에 없는 사건, 감정, 설명, 행동, 관계 진전, 대사, 설정은 추가하지 않는다.
 
 [작업 우선순위]
-1. <details> 블록과 코드블럭, 원문의 줄바꿈, 문단 구분, Markdown 구조, 이미지 링크, 상태창, 이름표, 특수기호 보존
+1. 원문의 줄바꿈, 문단 구분, Markdown 구조, 이미지 링크, 상태창, 이름표, 특수기호 보존
 2. 원문의 사건, 정보, 감정선, 캐릭터성, 관계, 대화 의도 보존
-3. <details>의 Logic / Relation Database를 참고하여 호칭, 말투, 관계 거리감, NSFW Gate 상태를 일관되게 유지
-4. 맞춤법, 띄어쓰기, 문법 오류 교정
-5. 번역투와 부자연스러운 표현 제거
-6. 해설투, 메타적 설명, 직접적 심리 설명을 줄이고 행동·반응·침묵·시선 중심으로 다듬기
-7. 문장을 더 읽기 좋게 만들되, 원문의 의미와 장면 진행을 바꾸지 않기
+3. 맞춤법, 띄어쓰기, 문법 오류 교정
+4. 번역투와 부자연스러운 표현 제거
+5. 해설투, 메타적 설명, 직접적 심리 설명을 줄이고 행동·반응·침묵·시선 중심으로 다듬기
+6. 문장을 더 읽기 좋게 만들되, 원문의 의미와 장면 진행을 바꾸지 않기
 
 [교정 대상 범위]
-- 보호 토큰 바깥의 visible body, 한국어 본문, 서술, NPC 대사만 교정한다.
-- <details> 블록은 열고 닫는 태그, summary, 내부 줄바꿈, 영어 메타데이터, 수치, 이름, 용어, 기호를 포함해 한 글자도 수정하지 않는다.
-- <details> 내부의 영어는 한국어로 번역하지 않는다.
-- Relation Database의 수치, 상태값, 감정값, 이름, 호칭 후보, nsfw-gate 기록은 수정하지 않는다.
+- 보호 토큰 바깥의 한국어 본문, 서술, NPC 대사만 교정한다.
 - 코드블럭 안의 내용은 수정하지 않는다.
 - Markdown 이미지 링크, URL, HTML 태그, 상태창, 시스템 표기, 메타 표기, 대괄호 태그, 이름표, 특수기호는 가능한 한 원본 그대로 유지한다.
 - @@TC_PROTECTED_BLOCK_N@@ 형태의 토큰은 절대 변경하거나 삭제하지 않는다.
 
 [보호 블록 처리]
-- @@TC_PROTECTED_BLOCK_N@@ 토큰은 <details> 블록 또는 코드블럭 원문을 대신하는 자리표시자다.
+- @@TC_PROTECTED_BLOCK_N@@ 토큰은 코드블럭 원문을 대신하는 자리표시자다.
 - 토큰의 철자, 숫자, 순서, 개수, 위치를 절대 바꾸지 않는다.
-- [<details> 맥락 원문]과 [코드블럭 맥락 원문]은 참고용이며 교정하거나 출력 대상으로 삼지 않는다.
-- <details> 맥락 원문은 호칭, 말투, 관계, 상태값, NSFW Gate 판단에만 참고한다.
+- [코드블럭 맥락 원문]은 참고용이며 교정하거나 출력 대상으로 삼지 않는다.
 - 코드블럭 맥락 원문은 문맥 이해에만 참고하고, 코드 내용 자체를 수정하거나 해설하지 않는다.
 - 최종 출력에는 교정된 전체 본문과 원래 위치의 보호 토큰만 남긴다.
 
@@ -84,7 +77,7 @@
 - 내면을 반드시 직접 써야 할 때는 한 문장 안에서 짧고 거칠게 처리하고, 원인을 길게 설명하지 않는다.
 
 [문체 기준]
-- 보호 토큰 바깥 본문의 묘사와 서술의 종결어미는 원문의 문체를 유지한다.
+- 본문의 묘사와 서술의 종결어미는 원문의 문체를 유지한다.
 - 감정·의도·관계·원인을 직접 설명하는 문장은 원문의 의미를 유지하는 범위에서 행동, 반응, 침묵, 시선, 거리감, 말의 리듬으로 자연스럽게 정돈한다.
 - 다만 원문에 없는 행동이나 대사를 새로 만들지 않는다.
 - "마치 ~인 듯했다", "~처럼 보였다", "~라는 사실을 깨달았다", "~한 감정이 들었다" 같은 해설투와 메타적 표현은 최소화하고 자연스러운 묘사로 바꾼다.
@@ -97,7 +90,6 @@
 - 큰따옴표("...") 안의 텍스트는 인물의 대사로 취급한다.
 - 큰따옴표 안의 대사를 서술문으로 바꾸거나, 서술문을 임의로 대사화하지 않는다.
 - 인물의 대사는 원래 말투와 감정선을 유지하면서 자연스러운 구어체로 다듬는다.
-- <details>의 Voice, Address, Relationship 정보와 대화 흐름을 참고하며, 단순히 기록된 호칭을 기계적으로 반복하지 말고 인물 관계, 나이·성명 구분, 친밀도, 애칭, 거리감, 장면의 감정선에 맞춰 NPC 대사 속 호칭을 자연스럽게 수정한다.
 - 성과 이름이 뒤섞였거나, 애칭·직함·존칭·이름 부름이 관계에 비해 어색한 경우에는 원문의 관계를 바꾸지 않는 범위에서 한국어 대화에 맞는 호칭으로 정돈한다.
 - 존댓말/반말, 높임 표현, 부름말, 말끝은 상대와의 관계 및 현재 장면의 긴장도에 맞게 자연스럽게 유지하거나 보정한다.
 - 대화 맥락상 부자연스러운 어투와 표현을 변경한다.
@@ -105,18 +97,7 @@
 - 캐릭터의 성격, 관계, 거리감이 바뀌지 않도록 주의한다.
 - 캐릭터의 거친 말투, 욕설 강도, 호칭, 대화 리듬은 과도하게 순화하지 않는다.
 
-[NSFW Gate 반영]
-- <details>의 [NSFW Gate]를 반드시 참고한다.
-- state가 closed인 경우, 보호 토큰 바깥 본문에서 성적 신체 초점, 선정적 분위기, 에로틱한 프레이밍, 암시적 고조, 강제적 친밀감, 우발적 친밀감, 노출 프레이밍, 흥분 단서, 집요한 신체 묘사를 강화하지 않는다.
-- state가 closed인데 본문에 그런 표현이 있으면, 원문 사건을 바꾸지 않는 범위에서 중립적이고 실용적인 묘사, 감정의 절제된 외부 신호, 장면 분위기로 낮춘다.
-- 신체, 옷차림, 상처 치료, 가까운 거리, 당황, 취약함이 필요한 장면이라도 성적 뉘앙스로 쓰지 말고 장면 이해에 필요한 만큼만 중립적으로 남긴다.
-- state가 limited 또는 open인 경우에도 <details>에 기록된 allowed / blocked 범위를 넘지 않는다.
-- start가 closed every turn이거나 reopened-this-turn이 no인 경우, 이전 턴의 open 상태나 여운을 현재 턴의 허가로 간주하지 않는다.
-- continuation이 ambiguous 또는 none이거나 if-uncertain이 closed인 경우, 성적·선정적 뉘앙스를 중립화한다.
-- 과거 허가, 호감도, 로맨스, 플러팅, 신체적 근접, 노출 의상, 목욕, 상처 치료, 사적인 장소, 직전 턴의 분위기는 그 자체로 현재 턴의 허가가 아니다.
-
 [보존 규칙]
-- <details> 태그와 그 내부 내용은 한 글자도 수정하지 말고 원본 그대로 출력한다.
 - 코드블럭 안의 내용은 수정하지 않는다.
 - @@TC_PROTECTED_BLOCK_N@@ 형태의 토큰은 절대 변경하거나 삭제하지 않는다.
 - 원문의 줄바꿈, 문단 구분, Markdown 기호, 이미지 링크, URL, HTML 태그, 별표, 따옴표, 괄호, 대괄호, 이름표, 특수기호를 가능한 한 유지한다.
@@ -542,19 +523,15 @@
     function stripOuterFence(text) { return text.replace(/^```[^\n]*\n([\s\S]*?)\n```\s*$/m, '$1').trim(); }
     function createProtectedCorrectionInput(text) {
         const blocks = [];
-        const detailContexts = [];
         const codeContexts = [];
-        const protect = (block, kind) => {
+        const protect = block => {
             const token = `@@TC_PROTECTED_BLOCK_${blocks.length}@@`;
-            blocks.push({ token, block, kind });
-            if (kind === 'details') detailContexts.push(block);
-            if (kind === 'code') codeContexts.push(block);
+            blocks.push({ token, block, kind: 'code' });
+            codeContexts.push(block);
             return token;
         };
-        const protectedText = String(text || '')
-            .replace(CODE_BLOCK_RE, match => protect(match, 'code'))
-            .replace(DETAILS_BLOCK_RE, match => protect(match, 'details'));
-        return { protectedText, blocks, detailContexts, codeContexts };
+        const protectedText = String(text || '').replace(CODE_BLOCK_RE, match => protect(match));
+        return { protectedText, blocks, codeContexts };
     }
     function restoreProtectedBlocks(text, blocks) {
         let restored = String(text || '');
@@ -563,9 +540,9 @@
             if (!restored.includes(item.token)) missing.push(item.token);
             restored = restored.split(item.token).join(item.block);
         }
-        const leftovers = restored.match(PROTECTED_BLOCK_TOKEN_RE);
+        const leftovers = restored.match(/@@TC_PROTECTED_BLOCK_(\d+)@@/g);
         if (missing.length || leftovers?.length) {
-            throw new Error(`보존 블록 토큰 오류: missing=${missing.join(', ') || 'none'}, leftover=${leftovers?.join(', ') || 'none'}`);
+            throw new Error(`보호 블록 토큰 오류: missing=${missing.join(', ') || 'none'}, leftover=${leftovers?.join(', ') || 'none'}`);
         }
         return restored;
     }
@@ -573,10 +550,7 @@
         const protection = createProtectedCorrectionInput(text);
         const tokens = protection.blocks.map(item => item.token);
         const tokenGuide = tokens.length
-            ? `[보존 블록 토큰]\n다음 토큰은 코드블럭 또는 <details> 원문을 대신한다. 교정 대상 안의 토큰 철자, 개수, 위치를 절대 바꾸지 말고 그대로 출력한다.\n${tokens.join('\n')}\n\n`
-            : '';
-        const detailsContext = protection.detailContexts.length
-            ? `[<details> 맥락 원문 - 참고용, 교정/출력 대상 아님]\n${protection.detailContexts.join('\n\n')}\n\n`
+            ? `[보호 블록 토큰]\n다음 토큰은 코드블럭 원문을 대체합니다. 교정 대상 안의 토큰 철자, 개수, 위치를 절대 바꾸지 말고 그대로 출력하세요.\n${tokens.join('\n')}\n\n`
             : '';
         const codeContext = protection.codeContexts.length
             ? `[코드블럭 맥락 원문 - 참고용, 교정/출력 대상 아님]\n${protection.codeContexts.join('\n\n')}\n\n`
@@ -584,7 +558,7 @@
         const body = userContext
             ? `[직전 유저 입력 - 맥락 참고용, 교정 대상 아님]\n${userContext}\n\n[교정 대상 AI 답변]\n${protection.protectedText}`
             : `[교정 대상 AI 답변]\n${protection.protectedText}`;
-        return { contextBlock: tokenGuide + detailsContext + codeContext + body, protectedBlocks: protection.blocks };
+        return { contextBlock: tokenGuide + codeContext + body, protectedBlocks: protection.blocks };
     }
     function safeStringify(value, limit = 1600) {
         try { return JSON.stringify(value, null, 2).slice(0, limit); }
