@@ -30,7 +30,7 @@
     const DEFAULT_DEEPSEEK_ENDPOINT = 'https://api.deepseek.com/chat/completions';
     const DEFAULT_OPENROUTER_MODEL = 'openai/gpt-4o-mini';
     const DEFAULT_OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
-    const DEFAULT_VERTEX_MODEL = 'https://aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/global/publishers/google/models/gemini-2.5-flash:generateContent';
+    const DEFAULT_VERTEX_MODEL = 'PROJECT_ID|global|gemini-2.5-flash';
 
     // v4.1 Gemini 안정화 옵션
     const GEMINI_TIMEOUT_MS = 120000;
@@ -743,9 +743,20 @@
         const value = String(modelOrEndpoint || '').trim();
         if (/^https?:\/\//i.test(value)) return value;
         if (/^projects\//i.test(value)) return `https://aiplatform.googleapis.com/v1/${value.replace(/^\/+/, '')}`;
-        throw new Error('Vertex model input must be a full generateContent endpoint or projects/... resource path.');
+        const parts = value.split('|').map(part => part.trim()).filter(Boolean);
+        if (parts.length === 2) return `https://aiplatform.googleapis.com/v1/projects/${parts[0]}/locations/global/publishers/google/models/${parts[1]}:generateContent`;
+        if (parts.length === 3) return `https://aiplatform.googleapis.com/v1/projects/${parts[0]}/locations/${parts[1]}/publishers/google/models/${parts[2]}:generateContent`;
+        const compact = value.match(/^([^:]+):(gemini-.+)$/i);
+        if (compact) return `https://aiplatform.googleapis.com/v1/projects/${compact[1]}/locations/global/publishers/google/models/${compact[2]}:generateContent`;
+        throw new Error('Vertex model input must be PROJECT_ID|global|MODEL_ID, PROJECT_ID|MODEL_ID, PROJECT_ID:MODEL_ID, a full generateContent endpoint, or projects/... resource path.');
     }
 
+    function getVertexHeaders(secret) {
+        const value = String(secret || '').trim();
+        const bearer = value.replace(/^Bearer\s+/i, '');
+        if (/^Bearer\s+/i.test(value) || /^ya29\./.test(value)) return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bearer}` };
+        return { 'Content-Type': 'application/json', 'x-goog-api-key': value };
+    }
     function callVertex(text, overrideModel = null, userContext = '') {
         return new Promise((resolve, reject) => {
             const apiKey = GM_getValue('vertexApiKey', '').trim();
@@ -756,7 +767,7 @@
             try { endpoint = getVertexEndpoint(modelOrEndpoint); } catch (e) { reject(e); return; }
             GM_xmlhttpRequest({
                 method: 'POST', timeout: 120000, url: endpoint,
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                headers: getVertexHeaders(apiKey),
                 data: JSON.stringify({ systemInstruction: { parts: [{ text: buildFinalPrompt() }] }, contents: [{ role: 'user', parts: [{ text: contextBlock }] }], generationConfig: { temperature: 0.7 } }),
                 onload(res) {
                     try {
