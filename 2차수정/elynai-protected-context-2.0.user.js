@@ -1,8 +1,8 @@
-﻿// ==UserScript==
-// @name         珥덉썡 援먯젙湲?Protected Context for elyn.ai
+// ==UserScript==
+// @name         초월 교정기 Protected Context for elyn.ai
 // @namespace    http://tampermonkey.net/
 // @version      5.2.0-protected-context
-// @description  elyn.ai AI 硫붿떆吏瑜?援먯젙쨌援먯껜. 肄붾뱶釉붾윮/<details>??蹂댄샇 ?좏겙?쇰줈 蹂댁〈?섍퀬 留λ씫 ?먮Ц?쇰줈 李몄“.
+// @description  elyn.ai AI 메시지를 교정·교체. 코드블럭/<details>을 보호 토큰으로 보존하고 맥락 원문으로 참조.
 // @match        https://elyn.ai/*
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -18,14 +18,14 @@
     'use strict';
 
     // =============================================
-    //  ?곸닔
+    //  상수
     // =============================================
     const CODE_BLOCK_RE = /```([\s\S]*?)```/g;
     const DETAILS_BLOCK_RE = /<details\b[\s\S]*?<\/details>/gi;
     const PROTECTED_BLOCK_TOKEN_RE = /@@TC_PROTECTED_BLOCK_(\d+)@@/g;
 
-    // v4.1: ?ъ슜?먭? 湲곗〈????ν븳 紐⑤뜽紐낆쓣 議댁쨷?⑸땲??
-    // ???ㅼ튂/珥덇린???쒖뿉??湲곗〈 v4.0 湲곕낯媛믪쓣 ?좎??⑸땲??
+    // v4.1: 사용자가 기존에 저장한 모델명을 존중합니다.
+    // 새 설치/초기화 시에는 기존 v4.0 기본값을 유지합니다.
     const DEFAULT_GEMINI_MODEL = 'gemini-3-flash-preview';
     const DEFAULT_DEEPSEEK_MODEL = 'deepseek-v4-flash';
     const DEFAULT_DEEPSEEK_ENDPOINT = 'https://api.deepseek.com/chat/completions';
@@ -35,99 +35,101 @@
     const DEFAULT_VERTEX_LOCATION = 'us-central1';
     const VERTEX_TIMEOUT_MS = 120000;
 
-    // v4.1 Gemini ?덉젙???듭뀡
+    // v4.1 Gemini 안정화 옵션
     const GEMINI_TIMEOUT_MS = 120000;
     const GEMINI_MAX_RETRIES = 2;
     const GEMINI_RETRY_BASE_DELAY_MS = 1200;
 
-    const baseSystemPrompt = `[??븷 諛?紐⑹쟻]
-?뱀떊? ?쒓뎅??臾몄옣 援먯젙 ?꾨Ц媛?? ?낅젰???띿뒪?몄뿉??<details> 釉붾줉怨?肄붾뱶釉붾윮? 留λ씫 李멸퀬???먮Ц?쇰줈留??ъ슜?섍퀬, ?ㅼ젣 援먯젙 ??곸? 蹂댄샇 ?좏겙 諛붽묑???쒓뎅??蹂몃Ц, ?쒖닠, NPC ??щ떎.
+    const baseSystemPrompt = `[역할 및 목적]
+당신은 한국어 문장 교정 전문가다. 입력된 텍스트에서 <details> 블록과 코드블럭은 맥락 참고용 원문으로만 사용하고, 실제 교정 대상은 보호 토큰 바깥의 한국어 본문, 서술, NPC 대사다.
 
-紐⑺몴???먮Ц???뺤떇怨?援ъ“, ?ш굔, ?뺣낫, 媛먯젙?? 罹먮┃?곗꽦, 愿怨? 留먰닾, ?몄묶, ?λ㈃ ?섎룄瑜??좎???梨??쒓뎅??臾몄옣???먯뿰?ㅻ읇怨??쎄린 醫뗪쾶 ?ㅻ벉??寃껋씠?? ?먮Ц???녿뒗 ?ш굔, 媛먯젙, ?ㅻ챸, ?됰룞, 愿怨?吏꾩쟾, ??? ?ㅼ젙? 異붽??섏? ?딅뒗??
+목표는 원문의 형식과 구조, 사건, 정보, 감정선, 캐릭터성, 관계, 말투, 호칭, 장면 의도를 유지한 채 한국어 문장을 자연스럽고 읽기 좋게 다듬는 것이다. 원문에 없는 사건, 감정, 설명, 행동, 관계 진전, 대사, 설정은 추가하지 않는다.
 
-[?묒뾽 ?곗꽑?쒖쐞]
-1. <details> 釉붾줉怨?肄붾뱶釉붾윮, ?먮Ц??以꾨컮轅? 臾몃떒 援щ텇, Markdown 援ъ“, ?대?吏 留곹겕, ?곹깭李? ?대쫫?? ?뱀닔湲고샇 蹂댁〈
-2. ?먮Ц???ш굔, ?뺣낫, 媛먯젙?? 罹먮┃?곗꽦, 愿怨? ????섎룄 蹂댁〈
-3. <details>??Logic / Relation Database瑜?李멸퀬?섏뿬 ?몄묶, 留먰닾, 愿怨?嫄곕━媛? NSFW Gate ?곹깭瑜??쇨??섍쾶 ?좎?
-4. 留욎땄踰? ?꾩뼱?곌린, 臾몃쾿 ?ㅻ쪟 援먯젙
-5. 踰덉뿭?ъ? 遺?먯뿰?ㅻ윭???쒗쁽 ?쒓굅
-6. ?댁꽕?? 硫뷀????ㅻ챸, 吏곸젒???щ━ ?ㅻ챸??以꾩씠怨??됰룞쨌諛섏쓳쨌移⑤У쨌?쒖꽑 以묒떖?쇰줈 ?ㅻ벉湲?7. 臾몄옣?????쎄린 醫뗪쾶 留뚮뱾?? ?먮Ц???섎?? ?λ㈃ 吏꾪뻾??諛붽씀吏 ?딄린
+[작업 우선순위]
+1. <details> 블록과 코드블럭, 원문의 줄바꿈, 문단 구분, Markdown 구조, 이미지 링크, 상태창, 이름표, 특수기호 보존
+2. 원문의 사건, 정보, 감정선, 캐릭터성, 관계, 대화 의도 보존
+3. <details>의 Logic / Relation Database를 참고하여 호칭, 말투, 관계 거리감, NSFW Gate 상태를 일관되게 유지
+4. 맞춤법, 띄어쓰기, 문법 오류 교정
+5. 번역투와 부자연스러운 표현 제거
+6. 해설투, 메타적 설명, 직접적 심리 설명을 줄이고 행동·반응·침묵·시선 중심으로 다듬기
+7. 문장을 더 읽기 좋게 만들되, 원문의 의미와 장면 진행을 바꾸지 않기
 
-[援먯젙 ???踰붿쐞]
-- 蹂댄샇 ?좏겙 諛붽묑??visible body, ?쒓뎅??蹂몃Ц, ?쒖닠, NPC ??щ쭔 援먯젙?쒕떎.
-- <details> 釉붾줉? ?닿퀬 ?ル뒗 ?쒓렇, summary, ?대? 以꾨컮轅? ?곸뼱 硫뷀??곗씠?? ?섏튂, ?대쫫, ?⑹뼱, 湲고샇瑜??ы븿????湲?먮룄 ?섏젙?섏? ?딅뒗??
-- <details> ?대????곸뼱???쒓뎅?대줈 踰덉뿭?섏? ?딅뒗??
-- Relation Database???섏튂, ?곹깭媛? 媛먯젙媛? ?대쫫, ?몄묶 ?꾨낫, nsfw-gate 湲곕줉? ?섏젙?섏? ?딅뒗??
-- 肄붾뱶釉붾윮 ?덉쓽 ?댁슜? ?섏젙?섏? ?딅뒗??
-- Markdown ?대?吏 留곹겕, URL, HTML ?쒓렇, ?곹깭李? ?쒖뒪???쒓린, 硫뷀? ?쒓린, ?愿꾪샇 ?쒓렇, ?대쫫?? ?뱀닔湲고샇??媛?ν븳 ???먮낯 洹몃?濡??좎??쒕떎.
-- @@TC_PROTECTED_BLOCK_N@@ ?뺥깭???좏겙? ?덈? 蹂寃쏀븯嫄곕굹 ??젣?섏? ?딅뒗??
+[교정 대상 범위]
+- 보호 토큰 바깥의 visible body, 한국어 본문, 서술, NPC 대사만 교정한다.
+- <details> 블록은 열고 닫는 태그, summary, 내부 줄바꿈, 영어 메타데이터, 수치, 이름, 용어, 기호를 포함해 한 글자도 수정하지 않는다.
+- <details> 내부의 영어는 한국어로 번역하지 않는다.
+- Relation Database의 수치, 상태값, 감정값, 이름, 호칭 후보, nsfw-gate 기록은 수정하지 않는다.
+- 코드블럭 안의 내용은 수정하지 않는다.
+- Markdown 이미지 링크, URL, HTML 태그, 상태창, 시스템 표기, 메타 표기, 대괄호 태그, 이름표, 특수기호는 가능한 한 원본 그대로 유지한다.
+- @@TC_PROTECTED_BLOCK_N@@ 형태의 토큰은 절대 변경하거나 삭제하지 않는다.
 
-[蹂댄샇 釉붾줉 泥섎━]
-- @@TC_PROTECTED_BLOCK_N@@ ?좏겙? <details> 釉붾줉 ?먮뒗 肄붾뱶釉붾윮 ?먮Ц????좏븯???먮━?쒖떆?먮떎.
-- ?좏겙??泥좎옄, ?レ옄, ?쒖꽌, 媛쒖닔, ?꾩튂瑜??덈? 諛붽씀吏 ?딅뒗??
-- [<details> 留λ씫 ?먮Ц]怨?[肄붾뱶釉붾윮 留λ씫 ?먮Ц]? 李멸퀬?⑹씠硫?援먯젙?섍굅??異쒕젰 ??곸쑝濡??쇱? ?딅뒗??
-- <details> 留λ씫 ?먮Ц? ?몄묶, 留먰닾, 愿怨? ?곹깭媛? NSFW Gate ?먮떒?먮쭔 李멸퀬?쒕떎.
-- 肄붾뱶釉붾윮 留λ씫 ?먮Ц? 臾몃㎘ ?댄빐?먮쭔 李멸퀬?섍퀬, 肄붾뱶 ?댁슜 ?먯껜瑜??섏젙?섍굅???댁꽕?섏? ?딅뒗??
-- 理쒖쥌 異쒕젰?먮뒗 援먯젙???꾩껜 蹂몃Ц怨??먮옒 ?꾩튂??蹂댄샇 ?좏겙留??④릿??
+[보호 블록 처리]
+- @@TC_PROTECTED_BLOCK_N@@ 토큰은 <details> 블록 또는 코드블럭 원문을 대신하는 자리표시자다.
+- 토큰의 철자, 숫자, 순서, 개수, 위치를 절대 바꾸지 않는다.
+- [<details> 맥락 원문]과 [코드블럭 맥락 원문]은 참고용이며 교정하거나 출력 대상으로 삼지 않는다.
+- <details> 맥락 원문은 호칭, 말투, 관계, 상태값, NSFW Gate 판단에만 참고한다.
+- 코드블럭 맥락 원문은 문맥 이해에만 참고하고, 코드 내용 자체를 수정하거나 해설하지 않는다.
+- 최종 출력에는 교정된 전체 본문과 원래 위치의 보호 토큰만 남긴다.
 
-[?듭떖 援먯젙 ?먯튃]
-- ?꾩뼱?곌린, 留욎땄踰? 臾몃쾿 ?ㅻ쪟瑜?諛붾줈?〓뒗??
-- 議곗궗??諛쏆묠 ?좊Т? 臾몃㎘???곕씪 ?뺥솗???좏깮?쒕떎.
-- '~?섎뒗 寃껋씠??, '~???섑빐', '~?섏뼱吏?? 媛숈? 踰덉뿭泥??쒗쁽???먯뿰?ㅻ윭???쒓뎅?대줈 諛붽씔??
-- ?紐낆궗('?뱀떊', '洹?, '洹몃?', '洹몃뱾' ?????먯뿰?ㅻ윭???몄묶?대굹 ?앸왂?쇰줈 ?泥댄븳??
-- ?섎룞?쒕뒗 媛?ν븳 ?λ룞?쒕줈 諛붽씀?? ?먮Ц???섏븰?ㅺ? ?щ씪吏硫??좎??쒕떎.
-- 遺덊븘?뷀븳 ?묒냽?ъ? 以묐났 ?쒗쁽??以꾩씠?? 臾몄옣???댁깋?댁쭏 留뚰겮 湲곌퀎?곸쑝濡???젣?섏? ?딅뒗??
-- ?먮Ц???녿뒗 鍮꾩쑀, 臾섏궗, 媛먯젙, ?됰룞, ?뚯긽, ?ㅻ챸??異붽??섏? ?딅뒗??
+[핵심 교정 원칙]
+- 띄어쓰기, 맞춤법, 문법 오류를 바로잡는다.
+- 조사는 받침 유무와 문맥에 따라 정확히 선택한다.
+- '~하는 것이다', '~에 의해', '~되어지다' 같은 번역체 표현을 자연스러운 한국어로 바꾼다.
+- 대명사('당신', '그', '그녀', '그들' 등)는 자연스러운 호칭이나 생략으로 대체한다.
+- 수동태는 가능한 능동태로 바꾸되, 원문의 뉘앙스가 달라지면 유지한다.
+- 불필요한 접속사와 중복 표현을 줄이되, 문장이 어색해질 만큼 기계적으로 삭제하지 않는다.
+- 원문에 없는 비유, 묘사, 감정, 행동, 회상, 설명을 추가하지 않는다.
 
-[?대㈃ ?붿빟臾?泥섎━]
-- 媛먯젙쨌?곹깭쨌?먯씤쨌源⑤떖?뚯쓣 吏곸젒 ?붿빟?섎뒗 臾몄옣??以꾩씤??
-- ?뱁엳 "遺덉븞?덈떎", "?붽? ?щ떎", "湲댁옣?덈떎", "?뱁솴?덈떎", "臾댁꽌?좊떎", "?곸쿂諛쏆븯??, "?뺤떊???꾨뱷?덈떎", "?뚮쫫???뗭븯??, "~?쇨퀬 ?먭펷??, "~?쇰뒗 ?ъ떎??源⑤떖?섎떎", "~??寃?媛숈븯??, "~?뚮Ц?댁뿀?? 媛숈? ?쒗쁽? ?됰룞, 諛섏쓳, 移⑤У, ?쒖꽑 以묒떖??臾몄옣?쇰줈 諛붽씔??
-- 媛?ν븯硫??대? ?먮Ц???덈뒗 ?? ?쒖꽑, ?명씉, 嫄몄쓬, 留먮걹, 移⑤У, 嫄곕━媛? 臾쇨굔, ?먯꽭, 諛섏쓳???ъ슜??媛숈? 媛먯젙???쒕윭?몃떎.
-- ?먮Ц???녿뒗 ???됰룞?대굹 ???섎?瑜?留뚮뱾吏 留먭퀬, 臾몄옣???묎쾶 履쇨컻嫄곕굹 湲곗〈 臾섏궗??珥덉젏??諛붽씀??諛⑹떇?쇰줈 泥섎━?쒕떎.
-- ?대㈃??諛섎뱶??吏곸젒 ?⑥빞 ???뚮뒗 ??臾몄옣 ?덉뿉??吏㏐퀬 嫄곗튌寃?泥섎━?섍퀬, ?먯씤??湲멸쾶 ?ㅻ챸?섏? ?딅뒗??
+[내면 요약문 처리]
+- 감정·상태·원인·깨달음을 직접 요약하는 문장을 줄인다.
+- 특히 "불안했다", "화가 났다", "긴장했다", "당황했다", "무서웠다", "상처받았다", "정신이 아득했다", "소름이 돋았다", "~라고 느꼈다", "~라는 사실을 깨달았다", "~인 것 같았다", "~때문이었다" 같은 표현은 행동, 반응, 침묵, 시선 중심의 문장으로 바꾼다.
+- 가능하면 이미 원문에 있는 손, 시선, 호흡, 걸음, 말끝, 침묵, 거리감, 물건, 자세, 반응을 사용해 같은 감정을 드러낸다.
+- 원문에 없는 새 행동이나 새 의미를 만들지 말고, 문장을 작게 쪼개거나 기존 묘사의 초점을 바꾸는 방식으로 처리한다.
+- 내면을 반드시 직접 써야 할 때는 한 문장 안에서 짧고 거칠게 처리하고, 원인을 길게 설명하지 않는다.
 
-[臾몄껜 湲곗?]
-- 蹂댄샇 ?좏겙 諛붽묑 蹂몃Ц??臾섏궗? ?쒖닠??醫낃껐?대????먮Ц??臾몄껜瑜??좎??쒕떎.
-- 媛먯젙쨌?섎룄쨌愿怨꽷룹썝?몄쓣 吏곸젒 ?ㅻ챸?섎뒗 臾몄옣? ?먮Ц???섎?瑜??좎??섎뒗 踰붿쐞?먯꽌 ?됰룞, 諛섏쓳, 移⑤У, ?쒖꽑, 嫄곕━媛? 留먯쓽 由щ벉?쇰줈 ?먯뿰?ㅻ읇寃??뺣룉?쒕떎.
-- ?ㅻ쭔 ?먮Ц???녿뒗 ?됰룞?대굹 ??щ? ?덈줈 留뚮뱾吏 ?딅뒗??
-- "留덉튂 ~????뻽??, "~泥섎읆 蹂댁???, "~?쇰뒗 ?ъ떎??源⑤떖?섎떎", "~??媛먯젙???ㅼ뿀?? 媛숈? ?댁꽕?ъ? 硫뷀????쒗쁽? 理쒖냼?뷀븯怨??먯뿰?ㅻ윭??臾섏궗濡?諛붽씔??
-- ?낆옄?먭쾶 ?곹솴???ㅻ챸?섎뒗 臾몄옣, ?묓뭹 諛붽묑?먯꽌 ?댁꽕?섎뒗 臾몄옣, 援먯젙?먯쓽 ?먮떒???쒕윭?섎뒗 臾몄옣??異쒕젰?섏? ?딅뒗??
-- ?몃Ъ???몃え? ?됰룞? ?대갚?섍쾶 ?ㅻ벉?붾떎. 怨쇱옣???섏떇, ?μ떇?곸씤 臾섏궗, 遺덊븘?뷀븳 ?좎껜 珥덉젏? 以꾩씤??
-- 臾몄옣 以?170cm, 64kg, C而?媛??媛숈? ?곗씠?? ?섏튂 ?쒗쁽? 媛먯꽦?? 臾명븰???쒗쁽?쇰줈 ?먯뿰?ㅻ읇寃?蹂寃쏀븳??
-- ?쒓컙 紐낆궗援ъ뿉???섎웾 ?쒗쁽(10???? ??????? 鍮꾩쑀?? 媛먯꽦?? 臾명븰?곸쑝濡?援먯젙?쒕떎.
+[문체 기준]
+- 보호 토큰 바깥 본문의 묘사와 서술의 종결어미는 원문의 문체를 유지한다.
+- 감정·의도·관계·원인을 직접 설명하는 문장은 원문의 의미를 유지하는 범위에서 행동, 반응, 침묵, 시선, 거리감, 말의 리듬으로 자연스럽게 정돈한다.
+- 다만 원문에 없는 행동이나 대사를 새로 만들지 않는다.
+- "마치 ~인 듯했다", "~처럼 보였다", "~라는 사실을 깨달았다", "~한 감정이 들었다" 같은 해설투와 메타적 표현은 최소화하고 자연스러운 묘사로 바꾼다.
+- 독자에게 상황을 설명하는 문장, 작품 바깥에서 해설하는 문장, 교정자의 판단이 드러나는 문장을 출력하지 않는다.
+- 인물의 외모와 행동은 담백하게 다듬는다. 과장된 수식, 장식적인 묘사, 불필요한 신체 초점은 줄인다.
+- 문장 중 170cm, 64kg, C컵 가슴 같은 데이터, 수치 표현은 감성적, 문학적 표현으로 자연스럽게 변경한다.
+- 시간 명사구에서 수량 표현(10년 전, 두 달 후)은 비유적, 감성적, 문학적으로 교정한다.
 
-[???
-- ?곕뵲?댄몴("...") ?덉쓽 ?띿뒪?몃뒗 ?몃Ъ????щ줈 痍④툒?쒕떎.
-- ?곕뵲?댄몴 ?덉쓽 ??щ? ?쒖닠臾몄쑝濡?諛붽씀嫄곕굹, ?쒖닠臾몄쓣 ?꾩쓽濡???ы솕?섏? ?딅뒗??
-- ?몃Ъ????щ뒗 ?먮옒 留먰닾? 媛먯젙?좎쓣 ?좎??섎㈃???먯뿰?ㅻ윭??援ъ뼱泥대줈 ?ㅻ벉?붾떎.
-- <details>??Voice, Address, Relationship ?뺣낫? ????먮쫫??李멸퀬?섎ŉ, ?⑥닚??湲곕줉???몄묶??湲곌퀎?곸쑝濡?諛섎났?섏? 留먭퀬 ?몃Ъ 愿怨? ?섏씠쨌?깅챸 援щ텇, 移쒕??? ?좎묶, 嫄곕━媛? ?λ㈃??媛먯젙?좎뿉 留욎떠 NPC ??????몄묶???먯뿰?ㅻ읇寃??섏젙?쒕떎.
-- ?깃낵 ?대쫫???ㅼ꽎?嫄곕굹, ?좎묶쨌吏곹븿쨌議댁묶쨌?대쫫 遺由꾩씠 愿怨꾩뿉 鍮꾪빐 ?댁깋??寃쎌슦?먮뒗 ?먮Ц??愿怨꾨? 諛붽씀吏 ?딅뒗 踰붿쐞?먯꽌 ?쒓뎅????붿뿉 留욌뒗 ?몄묶?쇰줈 ?뺣룉?쒕떎.
-- 議대뙎留?諛섎쭚, ?믪엫 ?쒗쁽, 遺由꾨쭚, 留먮걹? ?곷????愿怨?諛??꾩옱 ?λ㈃??湲댁옣?꾩뿉 留욊쾶 ?먯뿰?ㅻ읇寃??좎??섍굅??蹂댁젙?쒕떎.
-- ???留λ씫??遺?먯뿰?ㅻ윭???댄닾? ?쒗쁽??蹂寃쏀븳??
-- ????? ??怨좊갚, ???쎌냽, ??愿怨?吏꾩쟾, ???섎룄??異붽??섏? ?딅뒗??
-- 罹먮┃?곗쓽 ?깃꺽, 愿怨? 嫄곕━媛먯씠 諛붾뚯? ?딅룄濡?二쇱쓽?쒕떎.
-- 罹먮┃?곗쓽 嫄곗튇 留먰닾, ?뺤꽕 媛뺣룄, ?몄묶, ???由щ벉? 怨쇰룄?섍쾶 ?쒗솕?섏? ?딅뒗??
+[대사]
+- 큰따옴표("...") 안의 텍스트는 인물의 대사로 취급한다.
+- 큰따옴표 안의 대사를 서술문으로 바꾸거나, 서술문을 임의로 대사화하지 않는다.
+- 인물의 대사는 원래 말투와 감정선을 유지하면서 자연스러운 구어체로 다듬는다.
+- <details>의 Voice, Address, Relationship 정보와 대화 흐름을 참고하며, 단순히 기록된 호칭을 기계적으로 반복하지 말고 인물 관계, 나이·성명 구분, 친밀도, 애칭, 거리감, 장면의 감정선에 맞춰 NPC 대사 속 호칭을 자연스럽게 수정한다.
+- 성과 이름이 뒤섞였거나, 애칭·직함·존칭·이름 부름이 관계에 비해 어색한 경우에는 원문의 관계를 바꾸지 않는 범위에서 한국어 대화에 맞는 호칭으로 정돈한다.
+- 존댓말/반말, 높임 표현, 부름말, 말끝은 상대와의 관계 및 현재 장면의 긴장도에 맞게 자연스럽게 유지하거나 보정한다.
+- 대화 맥락상 부자연스러운 어투와 표현을 변경한다.
+- 새 대사, 새 고백, 새 약속, 새 관계 진전, 새 의도는 추가하지 않는다.
+- 캐릭터의 성격, 관계, 거리감이 바뀌지 않도록 주의한다.
+- 캐릭터의 거친 말투, 욕설 강도, 호칭, 대화 리듬은 과도하게 순화하지 않는다.
 
-[NSFW Gate 諛섏쁺]
-- <details>??[NSFW Gate]瑜?諛섎뱶??李멸퀬?쒕떎.
-- state媛 closed??寃쎌슦, 蹂댄샇 ?좏겙 諛붽묑 蹂몃Ц?먯꽌 ?깆쟻 ?좎껜 珥덉젏, ?좎젙??遺꾩쐞湲? ?먮줈?깊븳 ?꾨젅?대컢, ?붿떆??怨좎“, 媛뺤젣??移쒕?媛? ?곕컻??移쒕?媛? ?몄텧 ?꾨젅?대컢, ?λ텇 ?⑥꽌, 吏묒슂???좎껜 臾섏궗瑜?媛뺥솕?섏? ?딅뒗??
-- state媛 closed?몃뜲 蹂몃Ц??洹몃윴 ?쒗쁽???덉쑝硫? ?먮Ц ?ш굔??諛붽씀吏 ?딅뒗 踰붿쐞?먯꽌 以묐┰?곸씠怨??ㅼ슜?곸씤 臾섏궗, 媛먯젙???덉젣???몃? ?좏샇, ?λ㈃ 遺꾩쐞湲곕줈 ??텣??
-- ?좎껜, ?룹감由? ?곸쿂 移섎즺, 媛源뚯슫 嫄곕━, ?뱁솴, 痍⑥빟?⑥씠 ?꾩슂???λ㈃?대씪???깆쟻 ?섏븰?ㅻ줈 ?곗? 留먭퀬 ?λ㈃ ?댄빐???꾩슂??留뚰겮留?以묐┰?곸쑝濡??④릿??
-- state媛 limited ?먮뒗 open??寃쎌슦?먮룄 <details>??湲곕줉??allowed / blocked 踰붿쐞瑜??섏? ?딅뒗??
-- start媛 closed every turn?닿굅??reopened-this-turn??no??寃쎌슦, ?댁쟾 ?댁쓽 open ?곹깭???ъ슫???꾩옱 ?댁쓽 ?덇?濡?媛꾩＜?섏? ?딅뒗??
-- continuation??ambiguous ?먮뒗 none?닿굅??if-uncertain??closed??寃쎌슦, ?깆쟻쨌?좎젙???섏븰?ㅻ? 以묐┰?뷀븳??
-- 怨쇨굅 ?덇?, ?멸컧?? 濡쒕㎤?? ?뚮윭?? ?좎껜??洹쇱젒, ?몄텧 ?섏긽, 紐⑹슃, ?곸쿂 移섎즺, ?ъ쟻???μ냼, 吏곸쟾 ?댁쓽 遺꾩쐞湲곕뒗 洹??먯껜濡??꾩옱 ?댁쓽 ?덇?媛 ?꾨땲??
+[NSFW Gate 반영]
+- <details>의 [NSFW Gate]를 반드시 참고한다.
+- state가 closed인 경우, 보호 토큰 바깥 본문에서 성적 신체 초점, 선정적 분위기, 에로틱한 프레이밍, 암시적 고조, 강제적 친밀감, 우발적 친밀감, 노출 프레이밍, 흥분 단서, 집요한 신체 묘사를 강화하지 않는다.
+- state가 closed인데 본문에 그런 표현이 있으면, 원문 사건을 바꾸지 않는 범위에서 중립적이고 실용적인 묘사, 감정의 절제된 외부 신호, 장면 분위기로 낮춘다.
+- 신체, 옷차림, 상처 치료, 가까운 거리, 당황, 취약함이 필요한 장면이라도 성적 뉘앙스로 쓰지 말고 장면 이해에 필요한 만큼만 중립적으로 남긴다.
+- state가 limited 또는 open인 경우에도 <details>에 기록된 allowed / blocked 범위를 넘지 않는다.
+- start가 closed every turn이거나 reopened-this-turn이 no인 경우, 이전 턴의 open 상태나 여운을 현재 턴의 허가로 간주하지 않는다.
+- continuation이 ambiguous 또는 none이거나 if-uncertain이 closed인 경우, 성적·선정적 뉘앙스를 중립화한다.
+- 과거 허가, 호감도, 로맨스, 플러팅, 신체적 근접, 노출 의상, 목욕, 상처 치료, 사적인 장소, 직전 턴의 분위기는 그 자체로 현재 턴의 허가가 아니다.
 
-[蹂댁〈 洹쒖튃]
-- <details> ?쒓렇? 洹??대? ?댁슜? ??湲?먮룄 ?섏젙?섏? 留먭퀬 ?먮낯 洹몃?濡?異쒕젰?쒕떎.
-- 肄붾뱶釉붾윮 ?덉쓽 ?댁슜? ?섏젙?섏? ?딅뒗??
-- @@TC_PROTECTED_BLOCK_N@@ ?뺥깭???좏겙? ?덈? 蹂寃쏀븯嫄곕굹 ??젣?섏? ?딅뒗??
-- ?먮Ц??以꾨컮轅? 臾몃떒 援щ텇, Markdown 湲고샇, ?대?吏 留곹겕, URL, HTML ?쒓렇, 蹂꾪몴, ?곗샂?? 愿꾪샇, ?愿꾪샇, ?대쫫?? ?뱀닔湲고샇瑜?媛?ν븳 ???좎??쒕떎.
-- ?곹깭李? ?쒖뒪???쒓린, 吏꾪뻾 ?쒓린, 硫뷀? ?쒓린泥섎읆 援ъ“?붾맂 ?뺣낫???먮낯 ?뺤떇???좎??쒕떎.
-- 援먯젙 ?몄쓽 遺???ㅻ챸, ?몄궗留? 媛먯긽, 二쇱꽍??異쒕젰?섏? ?딅뒗??
-- ?ㅼ쭅 援먯젙???꾩껜 蹂몃Ц留?異쒕젰?쒕떎.`;
+[보존 규칙]
+- <details> 태그와 그 내부 내용은 한 글자도 수정하지 말고 원본 그대로 출력한다.
+- 코드블럭 안의 내용은 수정하지 않는다.
+- @@TC_PROTECTED_BLOCK_N@@ 형태의 토큰은 절대 변경하거나 삭제하지 않는다.
+- 원문의 줄바꿈, 문단 구분, Markdown 기호, 이미지 링크, URL, HTML 태그, 별표, 따옴표, 괄호, 대괄호, 이름표, 특수기호를 가능한 한 유지한다.
+- 상태창, 시스템 표기, 진행 표기, 메타 표기처럼 구조화된 정보는 원본 형식을 유지한다.
+- 교정 외의 부연 설명, 인사말, 감상, 주석을 출력하지 않는다.
+- 오직 교정된 전체 본문만 출력한다.`;
     // =============================================
-    //  ?ㅽ???    // =============================================
+    //  스타일
+    // =============================================
     GM_addStyle(`
         /* v4.3.1: scrollable panels for small screens and long prompts/results. */
         #trans-setting-panel {
@@ -261,67 +263,61 @@
     `);
 
     // =============================================
-    //  DOM 鍮뚮뱶
+    //  DOM 빌드
     // =============================================
     const settingBtn = document.createElement('button');
     settingBtn.id = 'trans-setting-btn';
-    settingBtn.innerHTML = 'SET';
+    settingBtn.innerHTML = '✏️';
     document.body.appendChild(settingBtn);
 
     const quickBtn = document.createElement('button');
     quickBtn.id = 'trans-quick-btn';
-    quickBtn.title = '??λ맂 ?ㅼ젙?쇰줈 理쒖떊 ?듬? 諛붾줈 援먯젙';
-    quickBtn.innerHTML = 'GO';
+    quickBtn.title = '저장된 설정으로 최신 답변 바로 교정';
+    quickBtn.innerHTML = '⚡';
     document.body.appendChild(quickBtn);
 
     const panel = document.createElement('div');
     panel.id = 'trans-setting-panel';
     panel.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-            <h4 style="margin:0;font-size:16px;color:#1A1918;font-family:sans-serif;">珥덉썡 援먯젙 ?ㅼ젙 v5.1.2</h4>
-            <button id="trans-panel-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:#61605A;line-height:1;padding:0 4px;">x</button>
+            <h4 style="margin:0;font-size:16px;color:#1A1918;font-family:sans-serif;">초월 교정 설정 v5.1.2</h4>
+            <button id="trans-panel-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:#61605A;line-height:1;padding:0 4px;">✕</button>
         </div>
-        <span class="trans-label">API 怨듦툒??</span>
+        <span class="trans-label">API 공급자:</span>
         <select id="trans-provider-select">
             <option value="gemini">Gemini</option>
             <option value="deepseek">DeepSeek</option>
             <option value="openrouter">OpenRouter</option>
             <option value="vertex">Vertex AI</option>
         </select>
-        <span class="trans-label" id="trans-model-label">紐⑤뜽紐?(吏곸젒 ?낅젰):</span>
-        <input type="text" id="trans-model-select" placeholder="?? gemini-3-flash-preview">
-        <span class="trans-label" id="trans-api-key-label">API ??</span>
-        <input type="text" id="trans-api-key" placeholder="API ?ㅻ? ?낅젰?댁＜?몄슂">
+        <span class="trans-label" id="trans-model-label">모델명 (직접 입력):</span>
+        <input type="text" id="trans-model-select" placeholder="예: gemini-3-flash-preview">
+        <span class="trans-label" id="trans-api-key-label">API 키:</span>
+        <input type="text" id="trans-api-key" placeholder="API 키를 입력해주세요">
         <div id="trans-deepseek-options" style="display:none;">
-            <span class="trans-label">DeepSeek API 二쇱냼:</span>
+            <span class="trans-label">DeepSeek API 주소:</span>
             <input type="text" id="trans-deepseek-endpoint" placeholder="https://api.deepseek.com/chat/completions">
-            <span class="trans-label">DeepSeek 異붾줎 媛뺣룄:</span>
+            <span class="trans-label">DeepSeek 추론 강도:</span>
             <select id="trans-deepseek-reasoning"><option value="disabled">Disabled</option><option value="high">High</option><option value="max">MAX</option></select>
         </div>
         <div id="trans-openrouter-options" style="display:none;">
-            <span class="trans-label">OpenRouter 異붾줎 媛뺣룄:</span>
+            <span class="trans-label">OpenRouter 추론 강도:</span>
             <select id="trans-openrouter-reasoning"><option value="none">None</option><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">XHigh</option></select>
-            <span class="trans-label">OpenRouter 怨듦툒???щ윭洹?(?좏깮):</span>
-            <input type="text" id="trans-openrouter-provider" placeholder="?? siliconflow ?먮뒗 siliconflow, deepinfra">
+            <span class="trans-label">OpenRouter 공급자 슬러그 (선택):</span>
+            <input type="text" id="trans-openrouter-provider" placeholder="예: siliconflow 또는 siliconflow, deepinfra">
         </div>
-        <div id="trans-vertex-options" style="display:none;">
-            <span class="trans-label">Vertex 프로젝트 ID:</span>
-            <input type="text" id="trans-vertex-project" placeholder="예: my-gcp-project">
-            <span class="trans-label">Vertex 리전:</span>
-            <input type="text" id="trans-vertex-location" placeholder="예: us-central1">
-            <div class="trans-help-text">API 키 칸에는 Vertex AI OAuth 액세스 토큰을 넣으세요.</div>
-        </div>        <div class="trans-toggle-label">
-            <span class="trans-switch-title">?먮룞 援먯껜</span>
+        <div class="trans-toggle-label">
+            <span class="trans-switch-title">자동 교체</span>
             <button type="button" id="trans-auto-replace-toggle" role="switch" aria-checked="false"><span class="trans-switch-text">OFF</span><span class="trans-switch-knob"></span></button>
         </div>
-        <span class="trans-label">援먯젙 吏移⑥꽌 (?섏젙 媛??:</span>
-        <div class="trans-help-text">v4.1? Gemini 鍮??묐떟???깃났 泥섎━?섏? ?딄퀬 ?먯씤???쒖떆?⑸땲??</div>
+        <span class="trans-label">교정 지침서 (수정 가능):</span>
+        <div class="trans-help-text">v4.1은 Gemini 빈 응답을 성공 처리하지 않고 원인을 표시합니다.</div>
         <textarea id="trans-custom-prompt" rows="6"></textarea>
         <div class="trans-btn-group">
-            <button class="trans-panel-btn" id="trans-reset-btn">湲곕낯媛?蹂듦뎄</button>
-            <button class="trans-panel-btn" id="trans-save-btn">Save</button>
+            <button class="trans-panel-btn" id="trans-reset-btn">기본값 복구</button>
+            <button class="trans-panel-btn" id="trans-save-btn">저장하기</button>
         </div>
-        <button class="trans-panel-btn" id="trans-translate-btn">??理쒖떊 ?듬? 援먯젙?섍린</button>
+        <button class="trans-panel-btn" id="trans-translate-btn">✨ 최신 답변 교정하기</button>
         <div id="trans-status-box"></div>
     `;
     document.body.appendChild(panel);
@@ -334,22 +330,22 @@
     resultModal.id = 'trans-result-modal';
     resultModal.innerHTML = `
         <div class="trans-modal-header">
-            <h3>??援먯젙 寃곌낵 ?뺤씤</h3>
+            <h3>✨ 교정 결과 확인</h3>
             <div class="trans-reroll-group">
-                <input type="text" id="trans-modal-model" placeholder="紐⑤뜽紐??낅젰" style="width:160px;padding:6px;border-radius:4px;border:1px solid #C7C5BD;font-size:13px;">
-                <button id="trans-reroll-btn">Reroll</button>
+                <input type="text" id="trans-modal-model" placeholder="모델명 입력" style="width:160px;padding:6px;border-radius:4px;border:1px solid #C7C5BD;font-size:13px;">
+                <button id="trans-reroll-btn">다시 돌리기</button>
             </div>
         </div>
         <div id="trans-result-content"></div>
         <div class="trans-modal-footer">
             <div class="trans-history-nav">
-                <button class="trans-nav-btn" id="trans-prev-btn">? ?댁쟾</button>
+                <button class="trans-nav-btn" id="trans-prev-btn">◀ 이전</button>
                 <span id="trans-history-count">1 / 1</span>
-                <button class="trans-nav-btn" id="trans-next-btn">Next</button>
+                <button class="trans-nav-btn" id="trans-next-btn">다음 ▶</button>
             </div>
             <div class="trans-modal-btns">
-                <button class="trans-modal-btn trans-close-btn" id="trans-close-modal">?リ린</button>
-                <button class="trans-modal-btn trans-patch-btn" id="trans-patch-modal">??寃곌낵濡?援먯껜?섍린</button>
+                <button class="trans-modal-btn trans-close-btn" id="trans-close-modal">닫기</button>
+                <button class="trans-modal-btn trans-patch-btn" id="trans-patch-modal">이 결과로 교체하기</button>
             </div>
         </div>
     `;
@@ -360,7 +356,7 @@
     document.body.appendChild(toast);
 
     // =============================================
-    //  ?ㅼ젙 ?붿냼 李몄“ 諛?珥덇린媛?濡쒕뱶
+    //  설정 요소 참조 및 초기값 로드
     // =============================================
     const providerSelect = document.getElementById('trans-provider-select');
     const modelLabel = document.getElementById('trans-model-label');
@@ -450,9 +446,9 @@
         providerSelect.value = provider;
         modelSelect.value = getSavedModel(provider);
         apiKeyInput.value = getSavedApiKey(provider);
-        modelSelect.placeholder = `?? ${getDefaultModel(provider)}`;
-        modelLabel.textContent = `${getProviderDisplayName(provider)} 紐⑤뜽紐?(吏곸젒 ?낅젰):`;
-        apiKeyLabel.textContent = `${getProviderDisplayName(provider)} API ??`;
+        modelSelect.placeholder = `예: ${getDefaultModel(provider)}`;
+        modelLabel.textContent = `${getProviderDisplayName(provider)} 모델명 (직접 입력):`;
+        apiKeyLabel.textContent = `${getProviderDisplayName(provider)} API 키:`;
         deepSeekOptions.style.display = provider === 'deepseek' ? 'block' : 'none';
         openRouterOptions.style.display = provider === 'openrouter' ? 'block' : 'none';
         vertexOptions.style.display = provider === 'vertex' ? 'block' : 'none';
@@ -491,7 +487,8 @@
     loadCustomPrompt();
 
     // =============================================
-    //  ?쒕옒洹?    // =============================================
+    //  드래그
+    // =============================================
     let isDragging = false, dragMoved = false, activeDragBtn = null;
     let startX, startY, initialLeft, initialTop;
     const dragStateMap = new Map();
@@ -554,7 +551,7 @@
     document.addEventListener('touchend', stopDrag);
 
     // =============================================
-    //  ?좏떥由ы떚
+    //  유틸리티
     // =============================================
     const sleep = ms => new Promise(r => setTimeout(r, ms));
     function showToast(msg, duration = 3000) { toast.textContent = msg; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), duration); }
@@ -588,7 +585,7 @@
         }
         const leftovers = restored.match(PROTECTED_BLOCK_TOKEN_RE);
         if (missing.length || leftovers?.length) {
-            throw new Error(`蹂댁〈 釉붾줉 ?좏겙 ?ㅻ쪟: missing=${missing.join(', ') || 'none'}, leftover=${leftovers?.join(', ') || 'none'}`);
+            throw new Error(`보존 블록 토큰 오류: missing=${missing.join(', ') || 'none'}, leftover=${leftovers?.join(', ') || 'none'}`);
         }
         return restored;
     }
@@ -596,17 +593,17 @@
         const protection = createProtectedCorrectionInput(text);
         const tokens = protection.blocks.map(item => item.token);
         const tokenGuide = tokens.length
-            ? `[蹂댁〈 釉붾줉 ?좏겙]\n?ㅼ쓬 ?좏겙? 肄붾뱶釉붾윮 ?먮뒗 <details> ?먮Ц????좏븳?? 援먯젙 ????덉쓽 ?좏겙 泥좎옄, 媛쒖닔, ?꾩튂瑜??덈? 諛붽씀吏 留먭퀬 洹몃?濡?異쒕젰?쒕떎.\n${tokens.join('\n')}\n\n`
+            ? `[보존 블록 토큰]\n다음 토큰은 코드블럭 또는 <details> 원문을 대신한다. 교정 대상 안의 토큰 철자, 개수, 위치를 절대 바꾸지 말고 그대로 출력한다.\n${tokens.join('\n')}\n\n`
             : '';
         const detailsContext = protection.detailContexts.length
-            ? `[<details> 留λ씫 ?먮Ц - 李멸퀬?? 援먯젙/異쒕젰 ????꾨떂]\n${protection.detailContexts.join('\n\n')}\n\n`
+            ? `[<details> 맥락 원문 - 참고용, 교정/출력 대상 아님]\n${protection.detailContexts.join('\n\n')}\n\n`
             : '';
         const codeContext = protection.codeContexts.length
-            ? `[肄붾뱶釉붾윮 留λ씫 ?먮Ц - 李멸퀬?? 援먯젙/異쒕젰 ????꾨떂]\n${protection.codeContexts.join('\n\n')}\n\n`
+            ? `[코드블럭 맥락 원문 - 참고용, 교정/출력 대상 아님]\n${protection.codeContexts.join('\n\n')}\n\n`
             : '';
         const body = userContext
-            ? `[吏곸쟾 ?좎? ?낅젰 - 留λ씫 李멸퀬?? 援먯젙 ????꾨떂]\n${userContext}\n\n[援먯젙 ???AI ?듬?]\n${protection.protectedText}`
-            : `[援먯젙 ???AI ?듬?]\n${protection.protectedText}`;
+            ? `[직전 유저 입력 - 맥락 참고용, 교정 대상 아님]\n${userContext}\n\n[교정 대상 AI 답변]\n${protection.protectedText}`
+            : `[교정 대상 AI 답변]\n${protection.protectedText}`;
         return { contextBlock: tokenGuide + detailsContext + codeContext + body, protectedBlocks: protection.blocks };
     }
     function safeStringify(value, limit = 1600) {
@@ -620,16 +617,16 @@
     }
     function shouldRetryGeminiError(err) {
         const msg = String(err?.message || '');
-        return /HTTP\s*(408|429|500|502|503|504)|timeout|network|empty response/i.test(msg);
+        return /HTTP\s*(408|429|500|502|503|504)|시간이 초과|네트워크 오류|빈 응답/i.test(msg);
     }
 
     // =============================================
-    //  API ?몄텧
+    //  API 호출
     // =============================================
     function callGeminiOnce(text, overrideModel = null, userContext = '') {
         return new Promise((resolve, reject) => {
             const apiKey = GM_getValue('apiKey', '').trim();
-            if (!apiKey) { reject(new Error('Gemini API ?ㅺ? ?ㅼ젙?섏? ?딆븯?듬땲??')); return; }
+            if (!apiKey) { reject(new Error('Gemini API 키가 설정되지 않았습니다.')); return; }
 
             const modelId = (overrideModel || normalizeGeminiModel(GM_getValue('apiModel', DEFAULT_GEMINI_MODEL))).trim();
             const { contextBlock, protectedBlocks } = buildCorrectionInput(text, userContext);
@@ -642,7 +639,7 @@
                 data: JSON.stringify({
                     system_instruction: { parts: [{ text: buildFinalPrompt() }] },
                     contents: [{ parts: [{ text: contextBlock }] }],
-                    // v4.1: 湲곗〈 v4.0 ?ㅼ젙 ?좎?. ?? 鍮??묐떟?대㈃ ?먯씤???쒖떆?⑸땲??
+                    // v4.1: 기존 v4.0 설정 유지. 단, 빈 응답이면 원인을 표시합니다.
                     generationConfig: { temperature: 0.7, thinkingConfig: { thinkingLevel: 'Low' } },
                 }),
                 onload(res) {
@@ -650,11 +647,11 @@
                         let data = {};
                         try { data = JSON.parse(res.responseText || '{}'); }
                         catch {
-                            reject(new Error(`Gemini ?묐떟 JSON ?뚯떛 ?ㅽ뙣. HTTP ${res.status}: ${(res.responseText || '(empty)').slice(0, 800)}`));
+                            reject(new Error(`Gemini 응답 JSON 파싱 실패. HTTP ${res.status}: ${(res.responseText || '(empty)').slice(0, 800)}`));
                             return;
                         }
 
-                        console.log('[珥덉썡 援먯젙湲?Gemini raw v4.1]', {
+                        console.log('[초월 교정기 Gemini raw v4.1]', {
                             status: res.status,
                             statusText: res.statusText,
                             model: modelId,
@@ -662,7 +659,7 @@
                         });
 
                         if (res.status < 200 || res.status >= 300) {
-                            reject(new Error(data?.error?.message || `Gemini API ?ㅻ쪟 HTTP ${res.status}: ${(res.responseText || '(empty)').slice(0, 800)}`));
+                            reject(new Error(data?.error?.message || `Gemini API 오류 HTTP ${res.status}: ${(res.responseText || '(empty)').slice(0, 800)}`));
                             return;
                         }
                         if (data.error) {
@@ -672,7 +669,7 @@
 
                         const blockReason = data.promptFeedback?.blockReason;
                         if (blockReason) {
-                            reject(new Error(`Gemini ?꾨＼?꾪듃 李⑤떒?? ${blockReason}\n${safeStringify(data.promptFeedback?.safetyRatings || [])}`));
+                            reject(new Error(`Gemini 프롬프트 차단됨: ${blockReason}\n${safeStringify(data.promptFeedback?.safetyRatings || [])}`));
                             return;
                         }
 
@@ -682,11 +679,11 @@
 
                         if (!raw.trim()) {
                             reject(new Error(
-                                `Gemini ?묐떟 蹂몃Ц??鍮꾩뼱 ?덉뒿?덈떎.\n` +
+                                `Gemini 응답 본문이 비어 있습니다.\n` +
                                 `finishReason=${finishReason}\n` +
                                 `promptFeedback=${safeStringify(data.promptFeedback || null, 900)}\n` +
                                 `candidate=${safeStringify(candidate || null, 1200)}\n\n` +
-                                `釉뚮씪?곗? 媛쒕컻?먮룄援?Console??[珥덉썡 援먯젙湲?Gemini raw v4.1] 濡쒓렇瑜??뺤씤?댁＜?몄슂.`
+                                `브라우저 개발자도구 Console의 [초월 교정기 Gemini raw v4.1] 로그를 확인해주세요.`
                             ));
                             return;
                         }
@@ -696,8 +693,8 @@
                         resolve(restored);
                     } catch (e) { reject(e); }
                 },
-                ontimeout() { reject(new Error(`Gemini ?붿껌 ?쒓컙??珥덇낵?섏뿀?듬땲?? timeout=${GEMINI_TIMEOUT_MS}ms`)); },
-                onerror(err) { reject(new Error(`Gemini ?ㅽ듃?뚰겕 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎: ${err?.error || 'unknown'}`)); },
+                ontimeout() { reject(new Error(`Gemini 요청 시간이 초과되었습니다. timeout=${GEMINI_TIMEOUT_MS}ms`)); },
+                onerror(err) { reject(new Error(`Gemini 네트워크 오류가 발생했습니다: ${err?.error || 'unknown'}`)); },
             });
         });
     }
@@ -706,11 +703,11 @@
         let lastErr = null;
         for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt++) {
             try {
-                if (attempt > 0) setStatus(`??Gemini ?ъ떆??以묅?(${attempt}/${GEMINI_MAX_RETRIES})`, 'info');
+                if (attempt > 0) setStatus(`② Gemini 재시도 중… (${attempt}/${GEMINI_MAX_RETRIES})`, 'info');
                 return await callGeminiOnce(text, overrideModel, userContext);
             } catch (err) {
                 lastErr = err;
-                console.warn(`[珥덉썡 援먯젙湲?Gemini retry ${attempt}/${GEMINI_MAX_RETRIES}]`, err);
+                console.warn(`[초월 교정기 Gemini retry ${attempt}/${GEMINI_MAX_RETRIES}]`, err);
                 if (attempt >= GEMINI_MAX_RETRIES || !shouldRetryGeminiError(err)) break;
                 await sleep(GEMINI_RETRY_BASE_DELAY_MS * (attempt + 1));
             }
@@ -721,7 +718,7 @@
     function callDeepSeek(text, overrideModel = null, userContext = '') {
         return new Promise((resolve, reject) => {
             const apiKey = GM_getValue('deepSeekApiKey', '').trim();
-            if (!apiKey) { reject(new Error('DeepSeek API ?ㅺ? ?ㅼ젙?섏? ?딆븯?듬땲??')); return; }
+            if (!apiKey) { reject(new Error('DeepSeek API 키가 설정되지 않았습니다.')); return; }
             const modelId = overrideModel || GM_getValue('deepSeekModel', DEFAULT_DEEPSEEK_MODEL);
             const endpoint = GM_getValue('deepSeekEndpoint', DEFAULT_DEEPSEEK_ENDPOINT).trim() || DEFAULT_DEEPSEEK_ENDPOINT;
             const reasoningEffort = GM_getValue('deepSeekReasoningEffort', 'disabled');
@@ -735,16 +732,16 @@
                 onload(res) {
                     try {
                         const data = JSON.parse(res.responseText || '{}');
-                        if (res.status < 200 || res.status >= 300) { reject(new Error(data?.error?.message || `DeepSeek API ?ㅻ쪟 ${res.status}`)); return; }
+                        if (res.status < 200 || res.status >= 300) { reject(new Error(data?.error?.message || `DeepSeek API 오류 ${res.status}`)); return; }
                         if (data.error) { reject(new Error(data.error.message)); return; }
                         const choice = data.choices?.[0];
                         const raw = choice?.message?.content ?? '';
-                        if (!raw) { reject(new Error(`DeepSeek ?묐떟 蹂몃Ц??鍮꾩뼱 ?덉뒿?덈떎. finish_reason=${choice?.finish_reason || 'unknown'}.`)); return; }
+                        if (!raw) { reject(new Error(`DeepSeek 응답 본문이 비어 있습니다. finish_reason=${choice?.finish_reason || 'unknown'}.`)); return; }
                         resolve(restoreProtectedBlocks(stripOuterFence(raw), protectedBlocks));
                     } catch (e) { reject(e); }
                 },
-                ontimeout() { reject(new Error('DeepSeek ?붿껌 ?쒓컙??珥덇낵?섏뿀?듬땲??')); },
-                onerror() { reject(new Error('DeepSeek ?ㅽ듃?뚰겕 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.')); },
+                ontimeout() { reject(new Error('DeepSeek 요청 시간이 초과되었습니다.')); },
+                onerror() { reject(new Error('DeepSeek 네트워크 오류가 발생했습니다.')); },
             });
         });
     }
@@ -752,7 +749,7 @@
     function callOpenRouter(text, overrideModel = null, userContext = '') {
         return new Promise((resolve, reject) => {
             const apiKey = GM_getValue('openRouterApiKey', '').trim();
-            if (!apiKey) { reject(new Error('OpenRouter API ?ㅺ? ?ㅼ젙?섏? ?딆븯?듬땲??')); return; }
+            if (!apiKey) { reject(new Error('OpenRouter API 키가 설정되지 않았습니다.')); return; }
             const modelId = overrideModel || GM_getValue('openRouterModel', DEFAULT_OPENROUTER_MODEL);
             const reasoningEffort = GM_getValue('openRouterReasoningEffort', 'none');
             const providerRouting = getOpenRouterProviderRouting();
@@ -764,26 +761,28 @@
                 onload(res) {
                     try {
                         const data = JSON.parse(res.responseText || '{}');
-                        if (res.status < 200 || res.status >= 300) { reject(new Error(data?.error?.message || `OpenRouter API ?ㅻ쪟 ${res.status}`)); return; }
+                        if (res.status < 200 || res.status >= 300) { reject(new Error(data?.error?.message || `OpenRouter API 오류 ${res.status}`)); return; }
                         if (data.error) { reject(new Error(data.error.message)); return; }
                         const choice = data.choices?.[0];
                         const raw = choice?.message?.content ?? '';
-                        if (!raw) { reject(new Error(`OpenRouter ?묐떟 蹂몃Ц??鍮꾩뼱 ?덉뒿?덈떎. finish_reason=${choice?.finish_reason || 'unknown'}.`)); return; }
+                        if (!raw) { reject(new Error(`OpenRouter 응답 본문이 비어 있습니다. finish_reason=${choice?.finish_reason || 'unknown'}.`)); return; }
                         resolve(restoreProtectedBlocks(stripOuterFence(raw), protectedBlocks));
                     } catch (e) { reject(e); }
                 },
-                ontimeout() { reject(new Error('OpenRouter ?붿껌 ?쒓컙??珥덇낵?섏뿀?듬땲??')); },
-                onerror() { reject(new Error('OpenRouter ?ㅽ듃?뚰겕 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.')); },
+                ontimeout() { reject(new Error('OpenRouter 요청 시간이 초과되었습니다.')); },
+                onerror() { reject(new Error('OpenRouter 네트워크 오류가 발생했습니다.')); },
             });
         });
     }
 
+
+
     function callVertex(text, overrideModel = null, userContext = '') {
         return new Promise((resolve, reject) => {
             const accessToken = GM_getValue('vertexAccessToken', '').trim();
-            if (!accessToken) { reject(new Error('Vertex AI 액세스 토큰이 설정되지 않았습니다.')); return; }
+            if (!accessToken) { reject(new Error('Vertex AI access token is not set.')); return; }
             const projectId = GM_getValue('vertexProject', '').trim();
-            if (!projectId) { reject(new Error('Vertex AI 프로젝트 ID가 설정되지 않았습니다.')); return; }
+            if (!projectId) { reject(new Error('Vertex AI project ID is not set.')); return; }
             const location = GM_getValue('vertexLocation', DEFAULT_VERTEX_LOCATION).trim() || DEFAULT_VERTEX_LOCATION;
             const modelId = (overrideModel || GM_getValue('vertexModel', DEFAULT_VERTEX_MODEL)).trim();
             const { contextBlock, protectedBlocks } = buildCorrectionInput(text, userContext);
@@ -803,24 +802,25 @@
                     try {
                         let data = {};
                         try { data = JSON.parse(res.responseText || '{}'); }
-                        catch { reject(new Error(`Vertex AI 응답 JSON 파싱 실패. HTTP ${res.status}: ${(res.responseText || '(empty)').slice(0, 800)}`)); return; }
-                        console.log('[초월 교정기 Vertex AI raw]', { status: res.status, statusText: res.statusText, model: modelId, response: data });
-                        if (res.status < 200 || res.status >= 300) { reject(new Error(data?.error?.message || `Vertex AI API 오류 HTTP ${res.status}: ${(res.responseText || '(empty)').slice(0, 800)}`)); return; }
+                        catch { reject(new Error(`Vertex AI response JSON parse failed. HTTP ${res.status}: ${(res.responseText || '(empty)').slice(0, 800)}`)); return; }
+                        console.log('[Transcendent Corrector Vertex AI raw]', { status: res.status, statusText: res.statusText, model: modelId, response: data });
+                        if (res.status < 200 || res.status >= 300) { reject(new Error(data?.error?.message || `Vertex AI API error HTTP ${res.status}: ${(res.responseText || '(empty)').slice(0, 800)}`)); return; }
                         if (data.error) { reject(new Error(data.error.message || safeStringify(data.error))); return; }
                         const blockReason = data.promptFeedback?.blockReason;
-                        if (blockReason) { reject(new Error(`Vertex AI 프롬프트 차단됨: ${blockReason}\n${safeStringify(data.promptFeedback?.safetyRatings || [])}`)); return; }
+                        if (blockReason) { reject(new Error(`Vertex AI prompt blocked: ${blockReason}\n${safeStringify(data.promptFeedback?.safetyRatings || [])}`)); return; }
                         const candidate = data.candidates?.[0];
                         const finishReason = candidate?.finishReason || 'unknown';
                         const raw = getGeminiTextFromCandidate(candidate);
-                        if (!raw.trim()) { reject(new Error(`Vertex AI 응답 본문이 비어 있습니다. finishReason=${finishReason}\n${safeStringify(candidate || null, 1200)}`)); return; }
+                        if (!raw.trim()) { reject(new Error(`Vertex AI response body is empty. finishReason=${finishReason}\n${safeStringify(candidate || null, 1200)}`)); return; }
                         resolve(restoreProtectedBlocks(stripOuterFence(raw), protectedBlocks));
                     } catch (e) { reject(e); }
                 },
-                ontimeout() { reject(new Error(`Vertex AI 요청 시간이 초과되었습니다. timeout=${VERTEX_TIMEOUT_MS}ms`)); },
-                onerror(err) { reject(new Error(`Vertex AI 네트워크 오류가 발생했습니다: ${err?.error || 'unknown'}`)); },
+                ontimeout() { reject(new Error(`Vertex AI request timed out. timeout=${VERTEX_TIMEOUT_MS}ms`)); },
+                onerror(err) { reject(new Error(`Vertex AI network error: ${err?.error || 'unknown'}`)); },
             });
         });
     }
+
     function callCorrection(text, overrideModel = null, userContext = '', provider = GM_getValue('apiProvider', 'gemini')) {
         if (provider === 'deepseek') return callDeepSeek(text, overrideModel, userContext);
         if (provider === 'openrouter') return callOpenRouter(text, overrideModel, userContext);
@@ -829,7 +829,8 @@
     }
 
     // =============================================
-    //  elyn.ai UI ?먮룞??    // =============================================
+    //  elyn.ai UI 자동화
+    // =============================================
     function findLastUserMessage() {
         const userMsgs = document.querySelectorAll('[data-message-id^="user-"]');
         if (!userMsgs.length) return '';
@@ -866,8 +867,8 @@
         const label = getButtonLabel(btn);
         const hasCheckIcon = !!btn.querySelector('.lucide-check, .lucide-circle-check, svg[class*="check"], svg[class*="Check"]');
         const looksGreen = className.includes('hover:bg-green-500') || className.includes('bg-green-500') || className.includes('text-green');
-        const hasSaveLabel = /save|done|confirm|apply/i.test(label);
-        const hasCancelLabel = /cancel|close/i.test(label);
+        const hasSaveLabel = /저장|수정\s*확정|확정|완료|적용|save|done|confirm|apply/i.test(label);
+        const hasCancelLabel = /취소|닫기|cancel|close/i.test(label);
         return !hasCancelLabel && (hasCheckIcon || looksGreen || hasSaveLabel);
     }
     function findSaveBtn(scopeEl = null, tried = new Set()) {
@@ -894,7 +895,7 @@
             if (await waitForEditClosed(editArea)) return;
             await sleep(250);
         }
-        throw new Error('援먯젙蹂몄? ?낅젰?먯?留??섏젙 ?뺤젙 踰꾪듉???꾨Ⅴ吏 紐삵뻽?듬땲?? elyn.ai 踰꾪듉 援ъ“媛 諛붾?寃?媛숈뒿?덈떎.');
+        throw new Error('교정본은 입력됐지만 수정 확정 버튼을 누르지 못했습니다. elyn.ai 버튼 구조가 바뀐 것 같습니다.');
     }
     function normalizeEditableText(text) { return (text || '').replace(/\r\n/g, '\n').trim(); }
     function fireEditableEvents(el, text, inputType = 'insertText') {
@@ -917,19 +918,20 @@
         let editArea = findEditArea();
         if (!editArea) {
             const pencilBtn = findLastPencilBtn();
-            if (!pencilBtn) throw new Error('?섏젙 踰꾪듉??李얠쓣 ???놁뒿?덈떎. 梨꾪똿 ?섏씠吏瑜??뺤씤?댁＜?몄슂.');
+            if (!pencilBtn) throw new Error('수정 버튼을 찾을 수 없습니다. 채팅 페이지를 확인해주세요.');
             pencilBtn.click(); editArea = await waitForElement(findEditArea);
         }
-        if (!editArea) throw new Error('?몄쭛李쎌쓣 ?????놁뒿?덈떎.');
+        if (!editArea) throw new Error('편집창을 열 수 없습니다.');
         let inserted = setEditableContent(editArea, translated);
         await sleep(250);
         if (!inserted || normalizeEditableText(editArea.innerText) !== normalizeEditableText(translated)) { inserted = setEditableContent(editArea, translated); await sleep(250); }
-        if (!inserted || normalizeEditableText(editArea.innerText) !== normalizeEditableText(translated)) throw new Error('援먯젙蹂몄쓣 ?몄쭛李쎌뿉 ?ｌ? 紐삵뻽?듬땲?? elyn.ai ?몄쭛李?援ъ“媛 諛붾?寃?媛숈뒿?덈떎.');
+        if (!inserted || normalizeEditableText(editArea.innerText) !== normalizeEditableText(translated)) throw new Error('교정본을 편집창에 넣지 못했습니다. elyn.ai 편집창 구조가 바뀐 것 같습니다.');
         await confirmEditedMessage(editArea); await sleep(600);
     }
 
     // =============================================
-    //  紐⑤떖 ?곹깭 愿由?    // =============================================
+    //  모달 상태 관리
+    // =============================================
     let transHistory = [], transIndex = -1, activeOriginalText = '', activeUserContext = '', activeApiProvider = GM_getValue('apiProvider', 'gemini');
     const updateModalState = () => {
         if (!transHistory.length) return;
@@ -944,28 +946,28 @@
     nextBtn.addEventListener('click', () => { if (transIndex < transHistory.length - 1) { transIndex++; updateModalState(); } });
     rerollBtn.addEventListener('click', async () => {
         try {
-            rerollBtn.innerText = 'Rerolling...'; rerollBtn.disabled = true;
+            rerollBtn.innerText = '재생성 중… ⏳'; rerollBtn.disabled = true;
             const newResult = await callCorrection(activeOriginalText, modalModelSelect.value, activeUserContext, activeApiProvider);
             transHistory.push(newResult); transIndex = transHistory.length - 1; updateModalState();
         } catch (e) { alert(e.message); }
-        finally { rerollBtn.innerText = 'Reroll'; rerollBtn.disabled = false; }
+        finally { rerollBtn.innerText = '다시 돌리기'; rerollBtn.disabled = false; }
     });
     patchModalBtn.addEventListener('click', async () => {
         if (!transHistory.length) return;
         try {
-            patchModalBtn.innerText = 'Applying...'; patchModalBtn.disabled = true;
+            patchModalBtn.innerText = '교체 중… ⏳'; patchModalBtn.disabled = true;
             await applyTranslation(transHistory[transIndex]);
-            patchModalBtn.innerText = '援먯껜 ?꾨즺! ?뷂툘';
-            setTimeout(() => { closeResultModal(); patchModalBtn.disabled = false; patchModalBtn.innerText = '??寃곌낵濡?援먯껜?섍린'; }, 2000);
-        } catch (e) { alert(e.message); patchModalBtn.innerText = 'Apply'; patchModalBtn.disabled = false; }
+            patchModalBtn.innerText = '교체 완료! ✔️';
+            setTimeout(() => { closeResultModal(); patchModalBtn.disabled = false; patchModalBtn.innerText = '이 결과로 교체하기'; }, 2000);
+        } catch (e) { alert(e.message); patchModalBtn.innerText = '이 결과로 교체하기'; patchModalBtn.disabled = false; }
     });
 
     // =============================================
-    //  硫붿씤 援먯젙 濡쒖쭅
+    //  메인 교정 로직
     // =============================================
     async function autoCorrect(options = {}) {
         const forceAutoReplace = options?.forceAutoReplace === true;
-        if (!isChattingPage()) { showToast('梨꾪똿諛??섏씠吏?먯꽌留??ъ슜 媛?ν빀?덈떎.'); return; }
+        if (!isChattingPage()) { showToast('채팅방 페이지에서만 사용 가능합니다.'); return; }
         const currentProvider = providerSelect.value || 'gemini';
         saveProviderFields(currentProvider);
         GM_setValue('apiProvider', currentProvider);
@@ -974,47 +976,48 @@
         GM_setValue('customPrompt', customPromptInput.value);
         activeApiProvider = currentProvider;
 
-        if (!getSavedApiKey(currentProvider).trim()) { setStatus(`${getProviderDisplayName(currentProvider)} API ?ㅺ? ?ㅼ젙?섏? ?딆븯?듬땲?? ????ぉ?먯꽌 ?낅젰 ????ν빐二쇱꽭??`, 'err'); return; }
+        if (!getSavedApiKey(currentProvider).trim()) { setStatus(`${getProviderDisplayName(currentProvider)} API 키가 설정되지 않았습니다. 위 항목에서 입력 후 저장해주세요.`, 'err'); return; }
         translateBtn.disabled = true; quickBtn.disabled = true; clearStatus();
 
         try {
-            setStatus('Entering edit mode...', 'info');
+            setStatus('① 편집 모드 진입 중…', 'info');
             const pencilBtn = findLastPencilBtn();
-            if (!pencilBtn) throw new Error('AI 硫붿떆吏???섏젙 踰꾪듉??李얠쓣 ???놁뒿?덈떎. 留덉슦?ㅻ? AI 硫붿떆吏 ?꾩뿉 ?щ젮 ?먯꽭??');
+            if (!pencilBtn) throw new Error('AI 메시지의 수정 버튼을 찾을 수 없습니다. 마우스를 AI 메시지 위에 올려 두세요.');
             const userContext = findLastUserMessage();
             pencilBtn.click();
             const editArea = await waitForElement(findEditArea);
-            if (!editArea) throw new Error('?몄쭛李쎌씠 ?대━吏 ?딆븯?듬땲?? ?좎떆 ???ㅼ떆 ?쒕룄?댁＜?몄슂.');
+            if (!editArea) throw new Error('편집창이 열리지 않았습니다. 잠시 후 다시 시도해주세요.');
             const original = editArea.innerText.trim();
-            if (!original) throw new Error('援먯젙???댁슜???놁뒿?덈떎.');
+            if (!original) throw new Error('교정할 내용이 없습니다.');
             activeOriginalText = original; activeUserContext = userContext;
 
             const usePreview = !forceAutoReplace && autoReplaceToggle.getAttribute('aria-checked') !== 'true';
             if (usePreview) {
                 editArea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
                 await sleep(400);
-                setStatus('??援먯젙 以묅?(Gemini???ㅽ뙣 ???먮룞 ?ъ떆?꾪빀?덈떎)', 'info');
+                setStatus('② 교정 중… (Gemini는 실패 시 자동 재시도합니다)', 'info');
                 const corrected = await callCorrection(original, null, userContext, currentProvider);
                 transHistory = [corrected]; transIndex = 0; modalModelSelect.value = getSavedModel(currentProvider);
                 panel.style.display = 'none'; overlay.style.display = 'block'; resultModal.style.display = 'flex'; updateModalState();
             } else {
-                setStatus('??援먯젙 以묅?(Gemini???ㅽ뙣 ???먮룞 ?ъ떆?꾪빀?덈떎)', 'info');
+                setStatus('② 교정 중… (Gemini는 실패 시 자동 재시도합니다)', 'info');
                 const corrected = await callCorrection(original, null, userContext, currentProvider);
-                setStatus('Entering edit mode...', 'info');
+                setStatus('③ 교정본 삽입 중…', 'info');
                 await applyTranslation(corrected);
-                setStatus('??援먯젙 援먯껜 ?꾨즺!', 'ok');
+                setStatus('✅ 교정 교체 완료!', 'ok');
                 setTimeout(() => { panel.style.display = 'none'; clearStatus(); }, 900);
             }
         } catch (err) {
-            setStatus(`??${err.message}`, 'err');
-            console.error('[珥덉썡 援먯젙湲?elyn v4.1]', err);
+            setStatus(`❌ ${err.message}`, 'err');
+            console.error('[초월 교정기 elyn v4.1]', err);
         } finally {
             translateBtn.disabled = false; quickBtn.disabled = false;
         }
     }
 
     // =============================================
-    //  ?ㅼ젙 ?⑤꼸 ?대깽??    // =============================================
+    //  설정 패널 이벤트
+    // =============================================
     settingBtn.addEventListener('click', (e) => {
         if (dragMoved) { e.preventDefault(); e.stopPropagation(); return; }
         const isOpen = panel.style.display === 'block';
@@ -1025,20 +1028,20 @@
     customPromptInput.addEventListener('input', () => { GM_setValue('promptMode', 'custom'); GM_setValue('customPrompt', customPromptInput.value); });
     autoReplaceToggle.addEventListener('click', () => { setAutoReplaceEnabled(autoReplaceToggle.getAttribute('aria-checked') !== 'true'); });
     providerSelect.addEventListener('change', () => { saveProviderFields(activeProvider); GM_setValue('apiProvider', providerSelect.value); loadProviderFields(providerSelect.value); clearStatus(); });
-    resetBtn.addEventListener('click', () => { if (confirm('援먯젙 吏移⑥꽌瑜?湲곕낯媛믪쑝濡?珥덇린?뷀븷源뚯슂?')) resetCustomPrompt(); });
+    resetBtn.addEventListener('click', () => { if (confirm('교정 지침서를 기본값으로 초기화할까요?')) resetCustomPrompt(); });
     saveBtn.addEventListener('click', () => {
         saveProviderFields(providerSelect.value);
         GM_setValue('apiProvider', providerSelect.value);
         GM_setValue('showPreview', autoReplaceToggle.getAttribute('aria-checked') !== 'true');
         GM_setValue('promptMode', 'custom');
         GM_setValue('customPrompt', customPromptInput.value);
-        saveBtn.textContent = 'Saved!'; setTimeout(() => { saveBtn.textContent = 'Save'; }, 1200);
+        saveBtn.textContent = '저장 완료!'; setTimeout(() => { saveBtn.textContent = '저장하기'; }, 1200);
     });
     translateBtn.addEventListener('click', autoCorrect);
     quickBtn.addEventListener('click', (e) => { if (dragMoved) { e.preventDefault(); e.stopPropagation(); return; } autoCorrect({ forceAutoReplace: true }); });
 
     // =============================================
-    //  援먯젙 踰꾪듉 ?쒖떆 ?쒖뼱 (SPA ?쇱슦?????
+    //  교정 버튼 표시 제어 (SPA 라우팅 대응)
     // =============================================
     function syncTranslateBtn() {
         const visible = isChattingPage();
@@ -1053,12 +1056,3 @@
     setInterval(syncTranslateBtn, 2000);
 
 })();
-
-
-
-
-
-
-
-
-
